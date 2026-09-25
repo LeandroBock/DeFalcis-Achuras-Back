@@ -1,15 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
-
 import { ValidationPipe } from '@nestjs/common';
-
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // 🌐 Ajustamos CORS para que acepte tanto local como producción más adelante
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: '*', // 💡 '*' permite peticiones desde cualquier origen (útil para desarrollo/testeo en producción)
+    credentials: true,
   });
 
   app.useGlobalPipes(
@@ -27,10 +27,15 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-
   SwaggerModule.setup('api', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // 🚀 Obtenemos el puerto de Render
+  const port = process.env.PORT ?? 3000;
+  
+  // ⚠️ Agregamos '0.0.0.0' para que Render detecte el puerto correctamente
+  await app.listen(port, '0.0.0.0');
+  
+  console.log(`Application is running on port: ${port}`);
 }
 
 bootstrap();
