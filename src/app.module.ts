@@ -27,23 +27,28 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
       isGlobal: true,
     }),
 
-    TypeOrmModule.forRootAsync({
+        TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
 
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
+        port: configService.get<number>('DB_PORT') || 5432, // Si falla, usa 5432 por defecto
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: true, // 💡 Nota: se recomienda 'false' en producción para evitar pérdida de datos
         dropSchema: false,
         logging: true,
+        // ⚠️ ADVERTENCIA: Supabase exige SSL activo en servidores en la nube como Render
+        ssl: {
+          rejectUnauthorized: false, 
+        },
       }),
     }),
+
 
     UsersModule,
 
