@@ -39,22 +39,21 @@ export class SuppliersService {
         );
       }
     }
-      if (createSupplierDto.phone) {
-        const existingPhone = await this.suppliersRepository.findOne({
-          where: { phone: createSupplierDto.phone },
-        });
+    if (createSupplierDto.phone) {
+      const existingPhone = await this.suppliersRepository.findOne({
+        where: { phone: createSupplierDto.phone },
+      });
 
-        if (existingPhone) {
-          throw new ConflictException(
-            'El correo electrónico ya está registrado por otro proveedor',
-          );
-        }
+      if (existingPhone) {
+        throw new ConflictException(
+          'El correo electrónico ya está registrado por otro proveedor',
+        );
       }
-      const supplier = this.suppliersRepository.create(createSupplierDto);
-
-      return this.suppliersRepository.save(supplier);
     }
-  
+    const supplier = this.suppliersRepository.create(createSupplierDto);
+
+    return this.suppliersRepository.save(supplier);
+  }
 
   async update(
     id: string,

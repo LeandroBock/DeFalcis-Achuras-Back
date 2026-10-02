@@ -31,10 +31,10 @@ async function bootstrap() {
 
   // 🚀 Obtenemos el puerto de Render
   const port = process.env.PORT ?? 3000;
-  
+
   // ⚠️ Agregamos '0.0.0.0' para que Render detecte el puerto correctamente
   await app.listen(port, '0.0.0.0');
-  
+
   console.log(`Application is running on port: ${port}`);
 }
 

@@ -27,7 +27,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
       isGlobal: true,
     }),
 
-        TypeOrmModule.forRootAsync({
+    TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
 
@@ -39,16 +39,14 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true, // 💡 Nota: se recomienda 'false' en producción para evitar pérdida de datos
+        synchronize: false, // 💡 Nota: se recomienda 'false' en producción para evitar pérdida de datos
         dropSchema: false,
         logging: true,
         // ⚠️ ADVERTENCIA: Supabase exige SSL activo en servidores en la nube como Render
-        ssl: {
-          rejectUnauthorized: false, 
-        },
+        ssl:
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
       }),
     }),
-
 
     UsersModule,
 

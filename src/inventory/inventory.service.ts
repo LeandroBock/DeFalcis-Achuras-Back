@@ -1,11 +1,10 @@
 import {
-  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 
 import {
   InventoryMovement,
@@ -15,7 +14,6 @@ import {
 import { Product } from '../products/entities/product.entity.js';
 
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto.js';
-import { EntityManager } from 'typeorm';
 
 @Injectable()
 export class InventoryService {
@@ -28,7 +26,12 @@ export class InventoryService {
   ) {}
 
   async create(createInventoryMovementDto: CreateInventoryMovementDto) {
-    const { productId, type, quantity, reason } = createInventoryMovementDto;
+    const {
+      productId,
+      type,
+      quantity,
+      reason,
+    } = createInventoryMovementDto;
 
     const product = await this.productsRepository.findOne({
       where: {
@@ -38,7 +41,9 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado o inactivo');
+      throw new NotFoundException(
+        'Producto no encontrado o inactivo',
+      );
     }
 
     const currentStock = Number(product.stock);
@@ -50,10 +55,7 @@ export class InventoryService {
     }
 
     if (type === InventoryMovementType.EXIT) {
-      if (quantity > currentStock) {
-        throw new BadRequestException('No hay suficiente stock disponible');
-      }
-
+      // Se permite stock negativo.
       newStock = currentStock - quantity;
     }
 
@@ -72,7 +74,8 @@ export class InventoryService {
       reason,
     });
 
-    const savedMovement = await this.movementsRepository.save(movement);
+    const savedMovement =
+      await this.movementsRepository.save(movement);
 
     return {
       movement: savedMovement,
@@ -87,6 +90,7 @@ export class InventoryService {
       },
     });
   }
+
   async registerPurchaseEntry(
     productId: string,
     quantity: number,
@@ -109,12 +113,16 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado o inactivo');
+      throw new NotFoundException(
+        'Producto no encontrado o inactivo',
+      );
     }
 
     const currentStock = Number(product.stock);
 
-    const newStock = Number((currentStock + quantity).toFixed(3));
+    const newStock = Number(
+      (currentStock + quantity).toFixed(3),
+    );
 
     product.stock = newStock;
 
@@ -153,16 +161,17 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado o inactivo');
+      throw new NotFoundException(
+        'Producto no encontrado o inactivo',
+      );
     }
 
     const currentStock = Number(product.stock);
 
-    if (quantity > currentStock) {
-      throw new BadRequestException('No hay suficiente stock disponible');
-    }
-
-    const newStock = Number((currentStock - quantity).toFixed(3));
+    // Se permite que el stock quede negativo.
+    const newStock = Number(
+      (currentStock - quantity).toFixed(3),
+    );
 
     product.stock = newStock;
 
