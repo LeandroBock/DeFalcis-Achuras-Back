@@ -12,6 +12,8 @@ import { Employee } from './entities/employee.entity.js';
 
 import { CreateEmployeeDto } from './dto/create-employee.dto.js';
 
+import { UpdateEmployeeDto } from './dto/update-employee.dto.js';
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -51,7 +53,7 @@ export class EmployeesService {
     return employee;
   }
 
-  async update(id: string, updateData: Partial<CreateEmployeeDto>) {
+  async update(id: string, updateData: UpdateEmployeeDto) {
     const employee = await this.findOne(id);
 
     Object.assign(employee, updateData);

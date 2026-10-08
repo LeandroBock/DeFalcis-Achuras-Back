@@ -63,4 +63,13 @@ export class Product {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  // Alícuota de IVA en %: 0, 2.5, 5, 10.5, 21 o 27
+@Column({
+  type: 'decimal',
+  precision: 5,
+  scale: 2,
+  default: 21,
+})
+vatRate: number;
 }

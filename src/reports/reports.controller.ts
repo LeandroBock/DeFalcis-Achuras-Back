@@ -3,7 +3,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 
 import { FinancialSummaryQueryDto } from './dto/financial-summary-query.dto.js';
 import { ReportsService } from './reports.service.js';
-
+import { StreamableFile } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
@@ -38,4 +38,16 @@ export class ReportsController {
   getPayables(@Query() query: FinancialSummaryQueryDto) {
     return this.reportsService.getPayables(query);
   }
+
+  @Get('export')
+@Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+async exportReport(@Query() query: FinancialSummaryQueryDto) {
+  const buffer = await this.reportsService.exportToExcel(query);
+
+  return new StreamableFile(buffer, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    disposition: 'attachment; filename="reporte.xlsx"',
+  });
+}
+
 }

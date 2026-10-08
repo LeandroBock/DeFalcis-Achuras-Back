@@ -12,6 +12,7 @@ import { Purchase } from '../purchases/entities/purchase.entity.js';
 import { Expense } from '../expenses/entities/expense.entity.js';
 import { Product } from '../products/entities/product.entity.js';
 import { SupplierPayment } from '../supplier-payments/entities/supplier-payment.entity.js';
+import { OrderItem } from '../order-items/entities/order-item.entity.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SupplierPayment } from '../supplier-payments/entities/supplier-payment.
       SupplierPayment,
       Customer,
       Supplier,
+      OrderItem,
     ]),
 
     ConfigModule,

@@ -26,6 +26,15 @@ export class Customer {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
+  // CUIT (11 dígitos) o DNI, sin guiones ni puntos
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  taxId?: string;
+
+  // Condición frente al IVA: 1 = Resp. Inscripto, 4 = Exento,
+  // 5 = Consumidor Final, 6 = Monotributo
+  @Column({ type: 'int', default: 5 })
+  taxCondition: number;
+
   @Column({ default: true })
   isActive: boolean;
 

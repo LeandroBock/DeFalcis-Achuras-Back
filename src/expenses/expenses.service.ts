@@ -1,12 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { Repository } from 'typeorm';
 
-import { Expense, ExpenseCategory } from './entities/expense.entity.js';
+import {
+  Expense,
+  ExpenseCategory,
+} from './entities/expense.entity.js';
 
 import { CreateExpenseDto } from './dto/create-expense.dto.js';
+import { UpdateExpenseDto } from './dto/update-expense.dto.js';
 
 @Injectable()
 export class ExpensesService {
@@ -16,7 +23,8 @@ export class ExpensesService {
   ) {}
 
   async create(createExpenseDto: CreateExpenseDto) {
-    const expense = this.expensesRepository.create(createExpenseDto);
+    const expense =
+      this.expensesRepository.create(createExpenseDto);
 
     return this.expensesRepository.save(expense);
   }
@@ -30,20 +38,25 @@ export class ExpensesService {
   }
 
   async findOne(id: string) {
-    const expense = await this.expensesRepository.findOne({
-      where: {
-        id,
-      },
-    });
+    const expense =
+      await this.expensesRepository.findOne({
+        where: {
+          id,
+        },
+      });
 
     if (!expense) {
-      throw new NotFoundException('Gasto no encontrado');
+      throw new NotFoundException(
+        'Gasto no encontrado',
+      );
     }
 
     return expense;
   }
 
-  async findByCategory(category: ExpenseCategory) {
+  async findByCategory(
+    category: ExpenseCategory,
+  ) {
     return this.expensesRepository.find({
       where: {
         category,
@@ -52,5 +65,29 @@ export class ExpensesService {
         createdAt: 'DESC',
       },
     });
+  }
+
+  async update(
+    id: string,
+    updateExpenseDto: UpdateExpenseDto,
+  ) {
+    const expense = await this.findOne(id);
+
+    Object.assign(
+      expense,
+      updateExpenseDto,
+    );
+
+    return this.expensesRepository.save(expense);
+  }
+
+  async remove(id: string) {
+    const expense = await this.findOne(id);
+
+    await this.expensesRepository.remove(expense);
+
+    return {
+      message: 'Gasto eliminado correctamente',
+    };
   }
 }

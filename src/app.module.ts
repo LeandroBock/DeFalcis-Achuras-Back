@@ -20,6 +20,7 @@ import { EmployeesModule } from './employee/employees.module.js';
 import { SupplierPaymentsModule } from './supplier-payments/supplier-payments.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
+import { InvoicingModule } from './invoicing/invoicing.module.js';
 
 @Module({
   imports: [
@@ -85,6 +86,8 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
     ReportsModule,
 
     WhatsAppModule,
+
+    InvoicingModule,
   ],
 })
 export class AppModule implements OnModuleInit {

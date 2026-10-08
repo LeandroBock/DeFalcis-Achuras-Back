@@ -21,6 +21,8 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 
 import { UserRole } from '../users/entities/user.entity.js';
 
+import { UpdateEmployeeDto } from './dto/update-employee.dto.js';
+
 @Controller('employees')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class EmployeesController {
@@ -54,7 +56,7 @@ export class EmployeesController {
     id: string,
 
     @Body()
-    updateData: Partial<CreateEmployeeDto>,
+updateData: UpdateEmployeeDto,
   ) {
     return this.employeesService.update(id, updateData);
   }
