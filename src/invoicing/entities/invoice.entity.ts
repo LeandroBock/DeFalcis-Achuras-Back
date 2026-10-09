@@ -58,18 +58,17 @@ export class Invoice {
   updatedAt: Date;
 
   // CUIT (11 dígitos) o DNI, sin guiones ni puntos
-@Column({ type: 'varchar', length: 20, nullable: true })
-taxId?: string;
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  taxId?: string;
 
-// Condición frente al IVA (ARCA): 1 = Resp. Inscripto, 4 = Exento,
-// 5 = Consumidor Final, 6 = Monotributo
-@Column({ type: 'int', default: 5 })
-taxCondition: number;
+  // Condición frente al IVA (ARCA): 1 = Resp. Inscripto, 4 = Exento,
+  // 5 = Consumidor Final, 6 = Monotributo
+  @Column({ type: 'int', default: 5 })
+  taxCondition: number;
 
-@Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
-netAmount: number;
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  netAmount: number;
 
-@Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
-vatAmount: number;
-
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  vatAmount: number;
 }

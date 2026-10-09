@@ -82,14 +82,14 @@ export class OrdersService {
             `El producto ${item.productId} no existe o está inactivo`,
           );
         }
+        //Stock negativo
+        // const currentStock = Number(product.stock);
 
-        const currentStock = Number(product.stock);
-
-        if (item.quantity > currentStock) {
-          throw new BadRequestException(
-            `Stock insuficiente para ${product.name}. Stock disponible: ${currentStock}`,
-          );
-        }
+        // if (item.quantity > currentStock) {
+        //   throw new BadRequestException(
+        //     `Stock insuficiente para ${product.name}. Stock disponible: ${currentStock}`,
+        //   );
+        // }
 
         const unitPrice = Number(product.salePrice);
 

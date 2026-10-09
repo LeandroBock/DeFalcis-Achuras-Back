@@ -24,20 +24,20 @@ import { UserRole } from '../users/entities/user.entity.js';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class InvoicingController {
   constructor(
-  private readonly invoicingService: InvoicingService,
-  private readonly invoicePdfService: InvoicePdfService,
-) {}
+    private readonly invoicingService: InvoicingService,
+    private readonly invoicePdfService: InvoicePdfService,
+  ) {}
 
-@Get(':id/pdf')
-@Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
-async getPdf(@Param('id', ParseUUIDPipe) id: string) {
-  const { buffer, filename } = await this.invoicePdfService.generate(id);
+  @Get(':id/pdf')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+  async getPdf(@Param('id', ParseUUIDPipe) id: string) {
+    const { buffer, filename } = await this.invoicePdfService.generate(id);
 
-  return new StreamableFile(buffer, {
-    type: 'application/pdf',
-    disposition: `attachment; filename="${filename}"`,
-  });
-}
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
+    });
+  }
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)

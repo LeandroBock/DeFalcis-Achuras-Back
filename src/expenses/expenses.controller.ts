@@ -28,42 +28,25 @@ import { UserRole } from '../users/entities/user.entity.js';
 @Controller('expenses')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ExpensesController {
-  constructor(
-    private readonly expensesService: ExpensesService,
-  ) {}
+  constructor(private readonly expensesService: ExpensesService) {}
 
   @Get()
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
   findAll() {
     return this.expensesService.findAll();
   }
 
   @Get('category/:category')
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
   findByCategory(
-    @Param(
-      'category',
-      new ParseEnumPipe(ExpenseCategory),
-    )
+    @Param('category', new ParseEnumPipe(ExpenseCategory))
     category: ExpenseCategory,
   ) {
     return this.expensesService.findByCategory(category);
   }
 
   @Get(':id')
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
   findOne(
     @Param('id', ParseUUIDPipe)
     id: string,
@@ -72,42 +55,23 @@ export class ExpensesController {
   }
 
   @Post()
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
-  create(
-    @Body() createExpenseDto: CreateExpenseDto,
-  ) {
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+  create(@Body() createExpenseDto: CreateExpenseDto) {
     return this.expensesService.create(createExpenseDto);
   }
 
   @Patch(':id')
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateExpenseDto: UpdateExpenseDto,
   ) {
-    return this.expensesService.update(
-      id,
-      updateExpenseDto,
-    );
+    return this.expensesService.update(id, updateExpenseDto);
   }
 
   @Delete(':id')
-  @Roles(
-    UserRole.SUPER_ADMIN,
-    UserRole.ADMIN,
-    UserRole.FINANZAS,
-  )
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.expensesService.remove(id);
   }
 }

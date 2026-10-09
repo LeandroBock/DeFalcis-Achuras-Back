@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -12,7 +16,7 @@ import { PurchaseItem } from '../purchase-items/entities/purchase-item.entity.js
 
 import { Supplier } from '../suppliers/entities/supplier.entity.js';
 import { Product } from '../products/entities/product.entity.js';
-
+import { UpdatePurchaseDto } from './dto/update-purchase.dto.js';
 import { CreatePurchaseDto } from './dto/create-purchase.dto.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 
@@ -201,6 +205,147 @@ export class PurchasesService {
       return {
         message: 'Compra anulada correctamente y stock revertido',
         purchase: updatedPurchase,
+      };
+    });
+  }
+
+  async update(id: string, updatePurchaseDto: UpdatePurchaseDto) {
+    return this.dataSource.transaction(async (manager) => {
+      const purchaseRepository = manager.getRepository(Purchase);
+      const purchaseItemRepository = manager.getRepository(PurchaseItem);
+      const supplierRepository = manager.getRepository(Supplier);
+      const productRepository = manager.getRepository(Product);
+
+      const purchase = await purchaseRepository.findOne({
+        where: { id },
+      });
+
+      if (!purchase) {
+        throw new NotFoundException('Compra no encontrada');
+      }
+
+      if (purchase.paymentStatus === PurchasePaymentStatus.CANCELLED) {
+        throw new ConflictException('No se puede modificar una compra anulada');
+      }
+
+      const { supplierId, paymentMethod, notes, items } = updatePurchaseDto;
+
+      // Validar proveedor si se está modificando.
+      if (supplierId !== undefined) {
+        const supplier = await supplierRepository.findOne({
+          where: { id: supplierId, isActive: true },
+        });
+
+        if (!supplier) {
+          throw new NotFoundException('El proveedor no existe o está inactivo');
+        }
+
+        purchase.supplierId = supplierId;
+      }
+
+      if (paymentMethod !== undefined) {
+        purchase.paymentMethod = paymentMethod;
+      }
+
+      if (notes !== undefined) {
+        purchase.notes = notes;
+      }
+
+      // Si no mandaron items, se conservan los existentes.
+      if (items !== undefined) {
+        const oldItems = await purchaseItemRepository.find({
+          where: { purchaseId: id },
+        });
+
+        // Agrupar cantidades por producto para contemplar
+        // productos repetidos en los ítems.
+        const oldQuantities = new Map<string, number>();
+        const newQuantities = new Map<string, number>();
+
+        for (const item of oldItems) {
+          oldQuantities.set(
+            item.productId,
+            (oldQuantities.get(item.productId) ?? 0) + Number(item.quantity),
+          );
+        }
+
+        const newPurchaseItems: PurchaseItem[] = [];
+        let total = 0;
+
+        for (const item of items) {
+          const product = await productRepository.findOne({
+            where: {
+              id: item.productId,
+              isActive: true,
+            },
+          });
+
+          if (!product) {
+            throw new NotFoundException(
+              `El producto ${item.productId} no existe o está inactivo`,
+            );
+          }
+
+          const quantity = Number(item.quantity);
+          const unitCost = Number(item.unitCost);
+          const subtotal = Number((quantity * unitCost).toFixed(2));
+
+          total += subtotal;
+
+          newQuantities.set(
+            item.productId,
+            (newQuantities.get(item.productId) ?? 0) + quantity,
+          );
+
+          newPurchaseItems.push(
+            purchaseItemRepository.create({
+              purchaseId: id,
+              productId: item.productId,
+              quantity,
+              unitCost,
+              subtotal,
+            }),
+          );
+        }
+
+        // Aplicar únicamente la diferencia de stock por producto.
+        const productIds = new Set([
+          ...oldQuantities.keys(),
+          ...newQuantities.keys(),
+        ]);
+
+        for (const productId of productIds) {
+          const oldQuantity = oldQuantities.get(productId) ?? 0;
+          const newQuantity = newQuantities.get(productId) ?? 0;
+          const difference = Number((newQuantity - oldQuantity).toFixed(3));
+
+          if (difference !== 0) {
+            await this.inventoryService.registerPurchaseEntry(
+              productId,
+              difference,
+              id,
+              manager,
+            );
+          }
+        }
+
+        // Reemplazar los ítems y recalcular el total.
+        await purchaseItemRepository.delete({ purchaseId: id });
+
+        purchase.total = Number(total.toFixed(2));
+
+        await purchaseItemRepository.save(newPurchaseItems);
+      }
+
+      const updatedPurchase = await purchaseRepository.save(purchase);
+
+      const updatedItems = await purchaseItemRepository.find({
+        where: { purchaseId: id },
+      });
+
+      return {
+        purchase: updatedPurchase,
+        items: updatedItems,
       };
     });
   }

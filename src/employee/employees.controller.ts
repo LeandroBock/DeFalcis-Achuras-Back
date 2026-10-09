@@ -56,7 +56,7 @@ export class EmployeesController {
     id: string,
 
     @Body()
-updateData: UpdateEmployeeDto,
+    updateData: UpdateEmployeeDto,
   ) {
     return this.employeesService.update(id, updateData);
   }

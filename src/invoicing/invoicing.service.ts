@@ -45,53 +45,53 @@ const toCents = (value: number | string) => Math.round(Number(value) * 100);
 export class InvoicingService {
   private afipClient: any;
 
-// Se crea recién al emitir, así un certificado faltante no tumba el arranque
-private get afip() {
-  if (!this.afipClient) {
-    const certPath = process.env.ARCA_CERT_PATH;
-    const keyPath = process.env.ARCA_KEY_PATH;
+  // Se crea recién al emitir, así un certificado faltante no tumba el arranque
+  private get afip() {
+    if (!this.afipClient) {
+      const certPath = process.env.ARCA_CERT_PATH;
+      const keyPath = process.env.ARCA_KEY_PATH;
 
-    const options: Record<string, unknown> = {
-      CUIT: Number(process.env.ARCA_CUIT),
-      production: process.env.ARCA_PRODUCTION === 'true',
-      access_token: process.env.AFIPSDK_ACCESS_TOKEN ?? '',
-    };
+      const options: Record<string, unknown> = {
+        CUIT: Number(process.env.ARCA_CUIT),
+        production: process.env.ARCA_PRODUCTION === 'true',
+        access_token: process.env.AFIPSDK_ACCESS_TOKEN ?? '',
+      };
 
-    if (certPath && keyPath) {
-      if (!existsSync(certPath) || !existsSync(keyPath)) {
-        throw new Error(
-          `No se encontró el certificado o la clave de ARCA (${certPath}, ${keyPath})`,
-        );
+      if (certPath && keyPath) {
+        if (!existsSync(certPath) || !existsSync(keyPath)) {
+          throw new Error(
+            `No se encontró el certificado o la clave de ARCA (${certPath}, ${keyPath})`,
+          );
+        }
+
+        options.cert = readFileSync(certPath, 'utf8');
+        options.key = readFileSync(keyPath, 'utf8');
       }
 
-      options.cert = readFileSync(certPath, 'utf8');
-      options.key = readFileSync(keyPath, 'utf8');
+      this.afipClient = new Afip(options as any);
     }
 
-    this.afipClient = new Afip(options as any);
+    return this.afipClient;
   }
-
-  return this.afipClient;
-}
   private readonly ptoVta = Number(process.env.ARCA_PTO_VTA ?? 1);
   private queue: Promise<unknown> = Promise.resolve();
 
-constructor(
-  @InjectRepository(Invoice)
-  private readonly invoicesRepository: Repository<Invoice>,
+  constructor(
+    @InjectRepository(Invoice)
+    private readonly invoicesRepository: Repository<Invoice>,
 
-  @InjectRepository(Order)
-  private readonly ordersRepository: Repository<Order>,
+    @InjectRepository(Order)
+    private readonly ordersRepository: Repository<Order>,
 
-  @InjectRepository(OrderItem)
-  private readonly orderItemsRepository: Repository<OrderItem>,
+    @InjectRepository(OrderItem)
+    private readonly orderItemsRepository: Repository<OrderItem>,
 
-  @InjectRepository(Product)
-  private readonly productsRepository: Repository<Product>,
+    @InjectRepository(Product)
+    private readonly productsRepository: Repository<Product>,
 
-  @InjectRepository(Customer)
-  private readonly customersRepository: Repository<Customer>,
-) {}
+    @InjectRepository(Customer)
+    private readonly customersRepository: Repository<Customer>,
+  ) {}
 
   findAll() {
     return this.invoicesRepository.find({ order: { createdAt: 'DESC' } });
@@ -174,9 +174,9 @@ constructor(
       return { orderId, ok: false, error: 'La venta no tiene productos' };
     }
 
-const products = await this.productsRepository.find({
-  where: { id: In(items.map((item) => item.productId)) },
-});
+    const products = await this.productsRepository.find({
+      where: { id: In(items.map((item) => item.productId)) },
+    });
     const productById = new Map(products.map((p) => [p.id, p]));
 
     // alícuota -> total con IVA incluido, en centavos

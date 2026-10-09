@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
@@ -26,12 +23,7 @@ export class InventoryService {
   ) {}
 
   async create(createInventoryMovementDto: CreateInventoryMovementDto) {
-    const {
-      productId,
-      type,
-      quantity,
-      reason,
-    } = createInventoryMovementDto;
+    const { productId, type, quantity, reason } = createInventoryMovementDto;
 
     const product = await this.productsRepository.findOne({
       where: {
@@ -41,9 +33,7 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException(
-        'Producto no encontrado o inactivo',
-      );
+      throw new NotFoundException('Producto no encontrado o inactivo');
     }
 
     const currentStock = Number(product.stock);
@@ -74,8 +64,7 @@ export class InventoryService {
       reason,
     });
 
-    const savedMovement =
-      await this.movementsRepository.save(movement);
+    const savedMovement = await this.movementsRepository.save(movement);
 
     return {
       movement: savedMovement,
@@ -113,26 +102,23 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException(
-        'Producto no encontrado o inactivo',
-      );
+      throw new NotFoundException('Producto no encontrado o inactivo');
     }
 
     const currentStock = Number(product.stock);
-
-    const newStock = Number(
-      (currentStock + quantity).toFixed(3),
-    );
+    const newStock = Number((currentStock + quantity).toFixed(3));
 
     product.stock = newStock;
-
     await productRepository.save(product);
 
     const movement = movementRepository.create({
       productId,
-      type: InventoryMovementType.ENTRY,
-      quantity,
-      reason: 'Ingreso por compra',
+      type:
+        quantity >= 0
+          ? InventoryMovementType.ENTRY
+          : InventoryMovementType.EXIT,
+      quantity: Math.abs(quantity),
+      reason: quantity >= 0 ? 'Ingreso por compra' : 'Reversión de compra',
       referenceId: purchaseId,
     });
 
@@ -161,17 +147,13 @@ export class InventoryService {
     });
 
     if (!product) {
-      throw new NotFoundException(
-        'Producto no encontrado o inactivo',
-      );
+      throw new NotFoundException('Producto no encontrado o inactivo');
     }
 
     const currentStock = Number(product.stock);
 
     // Se permite que el stock quede negativo.
-    const newStock = Number(
-      (currentStock - quantity).toFixed(3),
-    );
+    const newStock = Number((currentStock - quantity).toFixed(3));
 
     product.stock = newStock;
 

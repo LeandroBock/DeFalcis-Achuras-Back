@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Delete,
   UseGuards,
@@ -12,7 +13,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 
 import { PurchasesService } from './purchases.service.js';
 import { CreatePurchaseDto } from './dto/create-purchase.dto.js';
-
+import { UpdatePurchaseDto } from './dto/update-purchase.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
@@ -63,10 +64,12 @@ export class PurchasesController {
     return this.purchasesService.remove(id);
   }
 
-  @Delete(':id/remove')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN) // Elimina o cambia los roles si este endpoint es público
-  deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.purchasesService.remove(id);
+  @Patch(':id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updatePurchaseDto: UpdatePurchaseDto,
+  ) {
+    return this.purchasesService.update(id, updatePurchaseDto);
   }
 }

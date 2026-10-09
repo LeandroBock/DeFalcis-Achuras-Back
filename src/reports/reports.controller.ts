@@ -40,14 +40,13 @@ export class ReportsController {
   }
 
   @Get('export')
-@Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
-async exportReport(@Query() query: FinancialSummaryQueryDto) {
-  const buffer = await this.reportsService.exportToExcel(query);
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+  async exportReport(@Query() query: FinancialSummaryQueryDto) {
+    const buffer = await this.reportsService.exportToExcel(query);
 
-  return new StreamableFile(buffer, {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    disposition: 'attachment; filename="reporte.xlsx"',
-  });
-}
-
+    return new StreamableFile(buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: 'attachment; filename="reporte.xlsx"',
+    });
+  }
 }
