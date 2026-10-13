@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -20,6 +21,8 @@ export enum PurchasePaymentStatus {
   CANCELLED = 'cancelled',
 }
 
+@Index('IDX_PURCHASES_createdAt', ['createdAt'])
+@Index('IDX_PURCHASES_supplierId', ['supplierId'])
 @Entity('PURCHASES')
 export class Purchase {
   @PrimaryGeneratedColumn('uuid')

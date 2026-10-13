@@ -8,6 +8,7 @@ import {
   Post,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
@@ -18,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { UserRole } from '../users/entities/user.entity.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @ApiBearerAuth()
 @Controller('purchases')
@@ -32,8 +34,8 @@ export class PurchasesController {
     UserRole.FINANZAS,
     UserRole.DEPOSITO,
   )
-  findAll() {
-    return this.purchasesService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.purchasesService.findAll(query);
   }
 
   @Get(':id')

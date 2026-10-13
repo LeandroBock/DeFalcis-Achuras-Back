@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 
 import { SupplierPayment } from './entities/supplier-payment.entity.js';
 import { SupplierPaymentsController } from './supplier-payments.controller.js';
@@ -14,17 +13,6 @@ import { Purchase } from '../purchases/entities/purchase.entity.js';
     TypeOrmModule.forFeature([SupplierPayment, Purchase]),
 
     ConfigModule,
-
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: '1d',
-        },
-      }),
-    }),
   ],
 
   controllers: [SupplierPaymentsController],

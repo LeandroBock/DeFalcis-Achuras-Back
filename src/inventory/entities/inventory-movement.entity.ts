@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -11,6 +12,7 @@ export enum InventoryMovementType {
   ADJUSTMENT = 'adjustment',
 }
 
+@Index('IDX_INVENTORY_MOVEMENTS_productId', ['productId'])
 @Entity('INVENTORY_MOVEMENTS')
 export class InventoryMovement {
   @PrimaryGeneratedColumn('uuid')

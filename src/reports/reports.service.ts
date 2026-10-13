@@ -2,13 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 
-import {
-  Repository,
-  Between,
-  LessThanOrEqual,
-  MoreThanOrEqual,
-  In,
-} from 'typeorm';
+import { Repository, SelectQueryBuilder, ObjectLiteral } from 'typeorm';
 import { FinancialSummaryQueryDto } from './dto/financial-summary-query.dto.js';
 import { Order, OrderStatus } from '../orders/entities/order.entity.js';
 import { Supplier } from '../suppliers/entities/supplier.entity.js';
@@ -27,6 +21,16 @@ import { SupplierPayment } from '../supplier-payments/entities/supplier-payment.
 
 const SOLD_STATUSES = [OrderStatus.CONFIRMED, OrderStatus.DELIVERED];
 
+const OPEN_PURCHASE_STATUSES = [
+  PurchasePaymentStatus.PENDING,
+  PurchasePaymentStatus.PARTIAL,
+];
+
+type DateRange = { start?: Date; end?: Date };
+
+// Los montos `numeric` de Postgres llegan como string.
+const money = (value: unknown) => Number(Number(value ?? 0).toFixed(2));
+
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
   pending: 'Pendiente',
   partial: 'Parcial',
@@ -39,6 +43,7 @@ const METHOD_LABEL: Record<string, string> = {
   transfer: 'Transferencia',
   mercado_pago: 'Mercado Pago',
   credit: 'Crédito',
+  supplier_credit: 'Saldo a favor',
 };
 
 const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
@@ -69,15 +74,6 @@ export class ReportsService {
 
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
-
-    @InjectRepository(SupplierPayment)
-    private readonly supplierPaymentsRepository: Repository<SupplierPayment>,
-
-    @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
-
-    @InjectRepository(Supplier)
-    private readonly suppliersRepository: Repository<Supplier>,
 
     @InjectRepository(OrderItem)
     private readonly orderItemsRepository: Repository<OrderItem>,
@@ -135,315 +131,229 @@ export class ReportsService {
     return sheet;
   }
 
+  // Todos los totales se calculan en Postgres (SUM / GROUP BY): no se traen
+  // tablas enteras a memoria.
+
   async getFinancialSummary(query: FinancialSummaryQueryDto) {
     const { from, to } = query;
 
-    const dateFilter = this.buildDateFilter(from, to);
-
-    const orders = await this.ordersRepository.find({
-      where: {
-        status: OrderStatus.CONFIRMED,
-        ...(dateFilter && {
-          createdAt: dateFilter,
-        }),
-      },
-    });
-
-    const payments = await this.paymentsRepository.find({
-      where: dateFilter ? { createdAt: dateFilter } : {},
-    });
-
-    const purchases = await this.purchasesRepository.find({
-      where: dateFilter ? { createdAt: dateFilter } : {},
-    });
-
-    const expenses = await this.expensesRepository.find({
-      where: dateFilter ? { createdAt: dateFilter } : {},
-    });
-
-    const totalSales = orders.reduce(
-      (sum, order) => sum + Number(order.total),
-      0,
-    );
-
-    const totalCollected = payments.reduce(
-      (sum, payment) => sum + Number(payment.amount),
-      0,
-    );
-
-    const totalPurchases = purchases.reduce(
-      (sum, purchase) => sum + Number(purchase.total),
-      0,
-    );
-
-    const totalExpenses = expenses.reduce(
-      (sum, expense) => sum + Number(expense.amount),
-      0,
-    );
-
-    const estimatedResult = totalCollected - totalPurchases - totalExpenses;
+    const totals = await this.getFinancialTotals(this.buildDateRange(from, to));
 
     return {
       from: from ?? null,
       to: to ?? null,
-
-      totalSales: Number(totalSales.toFixed(2)),
-
-      totalCollected: Number(totalCollected.toFixed(2)),
-
-      totalPurchases: Number(totalPurchases.toFixed(2)),
-
-      totalExpenses: Number(totalExpenses.toFixed(2)),
-
-      estimatedResult: Number(estimatedResult.toFixed(2)),
+      ...totals,
     };
   }
 
   async getDashboard() {
-    const [products, orders, payments, purchases, supplierPayments, expenses] =
-      await Promise.all([
-        this.productsRepository.find({
-          where: {
-            isActive: true,
-          },
-        }),
+    const [financial, inventory, receivables, payables] = await Promise.all([
+      this.getFinancialTotals({}),
 
-        this.ordersRepository.find({
-          where: {
-            status: OrderStatus.CONFIRMED,
-          },
-        }),
+      this.productsRepository
+        .createQueryBuilder('product')
+        .select('COUNT(*)', 'totalProducts')
+        .addSelect(
+          'COUNT(*) FILTER (WHERE product.stock <= 0)',
+          'productsWithoutStock',
+        )
+        .addSelect(
+          'COUNT(*) FILTER (WHERE product.stock > 0 AND product.stock <= 5)',
+          'productsWithLowStock',
+        )
+        .where('product.isActive = true')
+        .getRawOne(),
 
-        this.paymentsRepository.find(),
+      this.receivablesQuery({})
+        .select('COALESCE(SUM(o.total - COALESCE(pay.paid, 0)), 0)', 'pending')
+        .getRawOne(),
 
-        this.purchasesRepository.find(),
-
-        this.supplierPaymentsRepository.find(),
-
-        this.expensesRepository.find(),
-      ]);
-
-    const totalSales = orders.reduce(
-      (sum, order) => sum + Number(order.total),
-      0,
-    );
-
-    const totalCollected = payments.reduce(
-      (sum, payment) => sum + Number(payment.amount),
-      0,
-    );
-
-    const totalPurchases = purchases.reduce(
-      (sum, purchase) => sum + Number(purchase.total),
-      0,
-    );
-
-    const totalSupplierPayments = supplierPayments.reduce(
-      (sum, payment) => sum + Number(payment.amount),
-      0,
-    );
-
-    const totalExpenses = expenses.reduce(
-      (sum, expense) => sum + Number(expense.amount),
-      0,
-    );
-
-    const productsWithoutStock = products.filter(
-      (product) => Number(product.stock) <= 0,
-    );
-
-    const productsWithLowStock = products.filter(
-      (product) => Number(product.stock) > 0 && Number(product.stock) <= 5,
-    );
-
-    const pendingReceivable = orders.reduce((sum, order) => {
-      const paid = payments
-        .filter((payment) => payment.orderId === order.id)
-        .reduce(
-          (paymentSum, payment) => paymentSum + Number(payment.amount),
-          0,
-        );
-
-      const pending = Number(order.total) - paid;
-
-      return sum + Math.max(pending, 0);
-    }, 0);
-
-    const pendingPayable = purchases
-      .filter(
-        (purchase) =>
-          purchase.paymentStatus === PurchasePaymentStatus.PENDING ||
-          purchase.paymentStatus === PurchasePaymentStatus.PARTIAL,
-      )
-      .reduce((sum, purchase) => {
-        const paid = supplierPayments
-          .filter((payment) => payment.purchaseId === purchase.id)
-          .reduce(
-            (paymentSum, payment) => paymentSum + Number(payment.amount),
-            0,
-          );
-
-        const pending = Number(purchase.total) - paid;
-
-        return sum + Math.max(pending, 0);
-      }, 0);
-
-    const estimatedResult = totalCollected - totalPurchases - totalExpenses;
+      this.payablesQuery({})
+        .select('COALESCE(SUM(p.total - COALESCE(pay.paid, 0)), 0)', 'pending')
+        .getRawOne(),
+    ]);
 
     return {
-      financial: {
-        totalSales: Number(totalSales.toFixed(2)),
-        totalCollected: Number(totalCollected.toFixed(2)),
-        totalPurchases: Number(totalPurchases.toFixed(2)),
-        totalExpenses: Number(totalExpenses.toFixed(2)),
-        estimatedResult: Number(estimatedResult.toFixed(2)),
-      },
+      financial,
 
       inventory: {
-        totalProducts: products.length,
-        productsWithoutStock: productsWithoutStock.length,
-        productsWithLowStock: productsWithLowStock.length,
+        totalProducts: Number(inventory.totalProducts),
+        productsWithoutStock: Number(inventory.productsWithoutStock),
+        productsWithLowStock: Number(inventory.productsWithLowStock),
       },
 
       receivables: {
-        pending: Number(pendingReceivable.toFixed(2)),
+        pending: money(receivables.pending),
       },
 
       payables: {
-        pending: Number(pendingPayable.toFixed(2)),
+        pending: money(payables.pending),
       },
     };
   }
 
   async getReceivables(query: FinancialSummaryQueryDto) {
-    const { from, to } = query;
-    const dateFilter = this.buildDateFilter(from, to);
-    const [orders, payments, customers] = await Promise.all([
-      this.ordersRepository.find({
-        where: {
-          status: OrderStatus.CONFIRMED,
-          ...(dateFilter && {
-            createdAt: dateFilter,
-          }),
-        },
-        order: {
-          createdAt: 'DESC',
-        },
-      }),
+    const rows = await this.receivablesQuery(
+      this.buildDateRange(query.from, query.to),
+    )
+      .leftJoin(Customer, 'c', 'c.id = o.customerId')
+      .select('o.customerId', 'customerId')
+      .addSelect('c.name', 'customerName')
+      .addSelect('o.id', 'orderId')
+      .addSelect('o.createdAt', 'orderDate')
+      .addSelect('o.total', 'total')
+      .addSelect('COALESCE(pay.paid, 0)', 'paid')
+      .addSelect('o.paymentStatus', 'paymentStatus')
+      .orderBy('o.createdAt', 'DESC')
+      .getRawMany();
 
-      this.paymentsRepository.find(),
-
-      this.customersRepository.find(),
-    ]);
-
-    const receivables = orders
-      .map((order) => {
-        const customer = customers.find(
-          (customer) => customer.id === order.customerId,
-        );
-
-        const paid = payments
-          .filter((payment) => payment.orderId === order.id)
-          .reduce((sum, payment) => sum + Number(payment.amount), 0);
-
-        const total = Number(order.total);
-
-        const pending = Math.max(total - paid, 0);
-
-        return {
-          customerId: order.customerId,
-          customerName: customer?.name ?? 'Cliente desconocido',
-          orderId: order.id,
-          orderDate: order.createdAt,
-          total: Number(total.toFixed(2)),
-          paid: Number(paid.toFixed(2)),
-          pending: Number(pending.toFixed(2)),
-          paymentStatus: order.paymentStatus,
-        };
-      })
-      .filter((order) => order.pending > 0);
-
-    return receivables;
-  }
-
-  private buildDateFilter(from?: string, to?: string) {
-    if (from && to) {
-      const startDate = new Date(`${from}T00:00:00`);
-      const endDate = new Date(`${to}T23:59:59.999`);
-
-      return Between(startDate, endDate);
-    }
-
-    if (from) {
-      return MoreThanOrEqual(new Date(`${from}T00:00:00`));
-    }
-
-    if (to) {
-      return LessThanOrEqual(new Date(`${to}T23:59:59.999`));
-    }
-
-    return undefined;
+    return rows.map((row) => ({
+      customerId: row.customerId,
+      customerName: row.customerName ?? 'Cliente desconocido',
+      orderId: row.orderId,
+      orderDate: row.orderDate,
+      total: money(row.total),
+      paid: money(row.paid),
+      pending: money(row.total - row.paid),
+      paymentStatus: row.paymentStatus,
+    }));
   }
 
   async getPayables(query: FinancialSummaryQueryDto) {
-    const { from, to } = query;
-    const dateFilter = this.buildDateFilter(from, to);
-    const [purchases, supplierPayments, suppliers] = await Promise.all([
-      this.purchasesRepository.find({
-        where: [
-          {
-            paymentStatus: PurchasePaymentStatus.PENDING,
-            ...(dateFilter && {
-              createdAt: dateFilter,
-            }),
-          },
-          {
-            paymentStatus: PurchasePaymentStatus.PARTIAL,
-            ...(dateFilter && {
-              createdAt: dateFilter,
-            }),
-          },
-        ],
-        order: {
-          createdAt: 'DESC',
-        },
-      }),
+    const rows = await this.payablesQuery(
+      this.buildDateRange(query.from, query.to),
+    )
+      .leftJoin(Supplier, 's', 's.id = p.supplierId')
+      .select('p.supplierId', 'supplierId')
+      .addSelect('s.name', 'supplierName')
+      .addSelect('p.id', 'purchaseId')
+      .addSelect('p.createdAt', 'purchaseDate')
+      .addSelect('p.total', 'total')
+      .addSelect('COALESCE(pay.paid, 0)', 'paid')
+      .addSelect('p.paymentStatus', 'paymentStatus')
+      .orderBy('p.createdAt', 'DESC')
+      .getRawMany();
 
-      this.supplierPaymentsRepository.find(),
+    return rows.map((row) => ({
+      supplierId: row.supplierId,
+      supplierName: row.supplierName ?? 'Proveedor desconocido',
 
-      this.suppliersRepository.find(),
-    ]);
+      purchaseId: row.purchaseId,
+      purchaseDate: row.purchaseDate,
 
-    const payables = purchases
-      .map((purchase) => {
-        const supplier = suppliers.find(
-          (supplier) => supplier.id === purchase.supplierId,
-        );
+      total: money(row.total),
+      paid: money(row.paid),
+      pending: money(row.total - row.paid),
 
-        const paid = supplierPayments
-          .filter((payment) => payment.purchaseId === purchase.id)
-          .reduce((sum, payment) => sum + Number(payment.amount), 0);
+      paymentStatus: row.paymentStatus,
+    }));
+  }
 
-        const total = Number(purchase.total);
-        const pending = Math.max(total - paid, 0);
+  private async getFinancialTotals(range: DateRange) {
+    const sum = <T extends ObjectLiteral>(
+      repository: Repository<T>,
+      column: string,
+      where?: (qb: SelectQueryBuilder<T>) => SelectQueryBuilder<T>,
+    ) => {
+      let qb = repository
+        .createQueryBuilder('t')
+        .select(`COALESCE(SUM(t.${column}), 0)`, 'total');
 
-        return {
-          supplierId: purchase.supplierId,
-          supplierName: supplier?.name ?? 'Proveedor desconocido',
+      qb = this.applyDateRange(qb, 't', range);
 
-          purchaseId: purchase.id,
-          purchaseDate: purchase.createdAt,
+      return (where ? where(qb) : qb)
+        .getRawOne()
+        .then((row) => money(row.total));
+    };
 
-          total: Number(total.toFixed(2)),
-          paid: Number(paid.toFixed(2)),
-          pending: Number(pending.toFixed(2)),
+    const [totalSales, totalCollected, totalPurchases, totalExpenses] =
+      await Promise.all([
+        sum(this.ordersRepository, 'total', (qb) =>
+          qb.andWhere('t.status IN (:...sold)', { sold: SOLD_STATUSES }),
+        ),
 
-          paymentStatus: purchase.paymentStatus,
-        };
-      })
-      .filter((purchase) => purchase.pending > 0);
+        sum(this.paymentsRepository, 'amount'),
 
-    return payables;
+        // Las compras anuladas no cuentan como egreso.
+        sum(this.purchasesRepository, 'total', (qb) =>
+          qb.andWhere('t.paymentStatus <> :cancelled', {
+            cancelled: PurchasePaymentStatus.CANCELLED,
+          }),
+        ),
+
+        sum(this.expensesRepository, 'amount'),
+      ]);
+
+    return {
+      totalSales,
+      totalCollected,
+      totalPurchases,
+      totalExpenses,
+      estimatedResult: money(totalCollected - totalPurchases - totalExpenses),
+    };
+  }
+
+  // Ventas con saldo pendiente de cobro, con lo pagado sumado por pedido.
+  private receivablesQuery(range: DateRange) {
+    const qb = this.ordersRepository
+      .createQueryBuilder('o')
+      .leftJoin(
+        (sub) =>
+          sub
+            .select('payment.orderId', 'orderId')
+            .addSelect('SUM(payment.amount)', 'paid')
+            .from(Payment, 'payment')
+            .groupBy('payment.orderId'),
+        'pay',
+        'pay."orderId" = o.id',
+      )
+      .where('o.status IN (:...sold)', { sold: SOLD_STATUSES })
+      .andWhere('o.total - COALESCE(pay.paid, 0) > 0');
+
+    return this.applyDateRange(qb, 'o', range);
+  }
+
+  // Compras pendientes o parciales con saldo por pagar.
+  private payablesQuery(range: DateRange) {
+    const qb = this.purchasesRepository
+      .createQueryBuilder('p')
+      .leftJoin(
+        (sub) =>
+          sub
+            .select('payment.purchaseId', 'purchaseId')
+            .addSelect('SUM(payment.amount)', 'paid')
+            .from(SupplierPayment, 'payment')
+            .groupBy('payment.purchaseId'),
+        'pay',
+        'pay."purchaseId" = p.id',
+      )
+      .where('p.paymentStatus IN (:...open)', { open: OPEN_PURCHASE_STATUSES })
+      .andWhere('p.total - COALESCE(pay.paid, 0) > 0');
+
+    return this.applyDateRange(qb, 'p', range);
+  }
+
+  private buildDateRange(from?: string, to?: string): DateRange {
+    return {
+      start: from ? new Date(`${from}T00:00:00`) : undefined,
+      end: to ? new Date(`${to}T23:59:59.999`) : undefined,
+    };
+  }
+
+  private applyDateRange<T extends ObjectLiteral>(
+    qb: SelectQueryBuilder<T>,
+    alias: string,
+    range: DateRange,
+  ) {
+    if (range.start) {
+      qb.andWhere(`${alias}.createdAt >= :start`, { start: range.start });
+    }
+
+    if (range.end) {
+      qb.andWhere(`${alias}.createdAt <= :end`, { end: range.end });
+    }
+
+    return qb;
   }
 
   async exportToExcel(query: FinancialSummaryQueryDto): Promise<Buffer> {
@@ -593,37 +503,65 @@ export class ReportsService {
     porPagar.autoFilter = 'A1:G1';
 
     // ---------- Datos para las hojas extra ----------
-    const dateFilter = this.buildDateFilter(query.from, query.to);
-    const createdAtWhere = dateFilter ? { createdAt: dateFilter } : {};
+    const range = this.buildDateRange(query.from, query.to);
 
-    const [products, orders, purchases, expenses, customers, suppliers] =
-      await Promise.all([
-        this.productsRepository.find({ order: { name: 'ASC' } }),
-        this.ordersRepository.find({
-          where: { status: In(SOLD_STATUSES), ...createdAtWhere },
-        }),
-        this.purchasesRepository.find({
-          where: createdAtWhere,
-          order: { createdAt: 'DESC' },
-        }),
-        this.expensesRepository.find({
-          where: createdAtWhere,
-          order: { createdAt: 'DESC' },
-        }),
-        this.customersRepository.find(),
-        this.suppliersRepository.find(),
-      ]);
+    const [products, saleItems, purchases, expenses] = await Promise.all([
+      this.productsRepository.find({ order: { name: 'ASC' } }),
 
-    const orderItems = orders.length
-      ? await this.orderItemsRepository.find({
-          where: { orderId: In(orders.map((o) => o.id)) },
-        })
-      : [];
+      // Un renglón por producto vendido, con su pedido, cliente y producto.
+      this.applyDateRange(
+        this.orderItemsRepository
+          .createQueryBuilder('item')
+          .innerJoin(Order, 'o', 'o.id = item.orderId')
+          .leftJoin(Customer, 'c', 'c.id = o.customerId')
+          .leftJoin(Product, 'product', 'product.id = item.productId')
+          .select('o.id', 'orderId')
+          .addSelect('o.createdAt', 'date')
+          .addSelect('o.paymentStatus', 'paymentStatus')
+          .addSelect('c.name', 'customerName')
+          .addSelect('product.name', 'productName')
+          .addSelect('product.unit', 'unit')
+          .addSelect('product.costPrice', 'costPrice')
+          .addSelect('item.quantity', 'quantity')
+          .addSelect('item.unitPrice', 'unitPrice')
+          .addSelect('item.subtotal', 'subtotal')
+          .where('o.status IN (:...sold)', { sold: SOLD_STATUSES }),
+        'o',
+        range,
+      )
+        // Dentro de un mismo pedido, los productos en el orden en que se cargaron.
+        .orderBy('o.createdAt', 'DESC')
+        .addOrderBy('item.createdAt', 'ASC')
+        .addOrderBy('item.id', 'ASC')
+        .getRawMany(),
 
-    const productById = new Map(products.map((p) => [p.id, p]));
-    const customerById = new Map(customers.map((c) => [c.id, c]));
-    const supplierById = new Map(suppliers.map((s) => [s.id, s]));
-    const orderById = new Map(orders.map((o) => [o.id, o]));
+      this.applyDateRange(
+        this.purchasesRepository
+          .createQueryBuilder('p')
+          .leftJoin(Supplier, 's', 's.id = p.supplierId')
+          .select('p.id', 'id')
+          .addSelect('p.createdAt', 'createdAt')
+          .addSelect('p.paymentMethod', 'paymentMethod')
+          .addSelect('p.paymentStatus', 'paymentStatus')
+          .addSelect('p.total', 'total')
+          .addSelect('s.name', 'supplierName')
+          .where('p.paymentStatus <> :cancelled', {
+            cancelled: PurchasePaymentStatus.CANCELLED,
+          }),
+        'p',
+        range,
+      )
+        .orderBy('p.createdAt', 'DESC')
+        .getRawMany(),
+
+      this.applyDateRange(
+        this.expensesRepository.createQueryBuilder('e'),
+        'e',
+        range,
+      )
+        .orderBy('e.createdAt', 'DESC')
+        .getMany(),
+    ]);
 
     // ---------- Hoja: Inventario ----------
     // A nombre, B categoría, C unidad, D stock, E costo, F precio venta,
@@ -674,29 +612,24 @@ export class ReportsService {
     // ---------- Hoja: Ventas (detalle por producto) ----------
     // A fecha, B N° venta, C cliente, D producto, E cantidad, F unidad,
     // G precio unit., H subtotal, I costo unit., J ganancia est., K estado pago
-    const salesRows = orderItems
-      .map((item) => ({ item, order: orderById.get(item.orderId)! }))
-      .sort((a, b) => b.order.createdAt.getTime() - a.order.createdAt.getTime())
-      .map(({ item, order }, i) => {
-        const row = i + 2;
-        const product = productById.get(item.productId);
+    const salesRows = saleItems.map((item, i) => {
+      const row = i + 2;
 
-        return {
-          date: order.createdAt,
-          orderId: order.id.slice(0, 8),
-          customer:
-            customerById.get(order.customerId)?.name ?? 'Cliente desconocido',
-          product: product?.name ?? 'Producto eliminado',
-          quantity: Number(item.quantity),
-          unit: product?.unit === 'kg' ? 'kg' : 'unidad',
-          unitPrice: Number(item.unitPrice),
-          subtotal: Number(item.subtotal),
-          unitCost: Number(product?.costPrice ?? 0),
-          profit: { formula: `H${row}-E${row}*I${row}` },
-          paymentStatus:
-            PAYMENT_STATUS_LABEL[order.paymentStatus] ?? order.paymentStatus,
-        };
-      });
+      return {
+        date: item.date,
+        orderId: item.orderId.slice(0, 8),
+        customer: item.customerName ?? 'Cliente desconocido',
+        product: item.productName ?? 'Producto eliminado',
+        quantity: Number(item.quantity),
+        unit: item.unit === 'kg' ? 'kg' : 'unidad',
+        unitPrice: Number(item.unitPrice),
+        subtotal: Number(item.subtotal),
+        unitCost: Number(item.costPrice ?? 0),
+        profit: { formula: `H${row}-E${row}*I${row}` },
+        paymentStatus:
+          PAYMENT_STATUS_LABEL[item.paymentStatus] ?? item.paymentStatus,
+      };
+    });
 
     this.addTableSheet(
       workbook,
@@ -734,17 +667,14 @@ export class ReportsService {
         { header: 'Estado de pago', key: 'status', width: 16 },
         { header: 'Total', key: 'total', width: 16 },
       ],
-      purchases
-        .filter((p) => p.paymentStatus !== PurchasePaymentStatus.CANCELLED)
-        .map((p) => ({
-          date: p.createdAt,
-          purchaseId: p.id.slice(0, 8),
-          supplier:
-            supplierById.get(p.supplierId)?.name ?? 'Proveedor desconocido',
-          method: METHOD_LABEL[p.paymentMethod] ?? p.paymentMethod,
-          status: PAYMENT_STATUS_LABEL[p.paymentStatus] ?? p.paymentStatus,
-          total: Number(p.total),
-        })),
+      purchases.map((p) => ({
+        date: p.createdAt,
+        purchaseId: p.id.slice(0, 8),
+        supplier: p.supplierName ?? 'Proveedor desconocido',
+        method: METHOD_LABEL[p.paymentMethod] ?? p.paymentMethod,
+        status: PAYMENT_STATUS_LABEL[p.paymentStatus] ?? p.paymentStatus,
+        total: Number(p.total),
+      })),
       { date: ['date'], money: ['total'], totals: ['total'] },
     );
 

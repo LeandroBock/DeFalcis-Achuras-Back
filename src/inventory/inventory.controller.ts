@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Query } from '@nestjs/common';
 
 import { InventoryService } from './inventory.service.js';
 
@@ -9,6 +9,7 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 
 import { UserRole } from '../users/entities/user.entity.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -22,8 +23,8 @@ export class InventoryController {
     UserRole.DEPOSITO,
     UserRole.FINANZAS,
   )
-  findAll() {
-    return this.inventoryService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.inventoryService.findAll(query);
   }
 
   @Post('movement')

@@ -47,15 +47,18 @@ $ npm run start:prod
 ## Run tests
 
 ```bash
-# unit tests
+# unit tests (sin base de datos)
 $ npm run test
 
-# e2e tests
+# tests de integración: levantan la app completa contra un Postgres local
+$ docker compose -f docker-compose.test.yml up -d
 $ npm run test:e2e
 
 # test coverage
 $ npm run test:cov
 ```
+
+Los tests de integración crean una base descartable por archivo (`dfachuras_test_*`) y la borran al terminar. Por defecto usan el Postgres de `docker-compose.test.yml` (puerto 5433); para usar otro, definí `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_USER` y `TEST_DB_PASSWORD`. Por seguridad, se niegan a correr contra un servidor que no sea local.
 
 ## Deployment
 

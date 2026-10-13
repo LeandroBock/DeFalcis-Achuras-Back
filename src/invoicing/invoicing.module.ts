@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 
 import { Invoice } from './entities/invoice.entity.js';
 import { InvoicingController } from './invoicing.controller.js';
@@ -17,17 +16,6 @@ import { Customer } from '../customers/entities/customer.entity.js';
     TypeOrmModule.forFeature([Invoice, Order, OrderItem, Product, Customer]),
 
     ConfigModule,
-
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: '1d',
-        },
-      }),
-    }),
   ],
 
   controllers: [InvoicingController],

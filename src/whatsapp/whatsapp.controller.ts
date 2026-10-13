@@ -6,6 +6,7 @@ import {
   Post,
   UseGuards,
   ParseUUIDPipe,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
@@ -17,6 +18,7 @@ import { AnalyzeWhatsAppMessageDto } from './dto/analyze-whatsapp-message.dto.js
 import { CreateWhatsAppMessageDto } from './dto/create-whatsapp-message.dto.js';
 import { WhatsAppService } from './whatsapp.service.js';
 import { PrepareWhatsAppOrderDto } from './dto/prepare-whatsapp-order.dto.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @ApiTags('WhatsApp')
 @ApiBearerAuth()
@@ -45,8 +47,8 @@ export class WhatsAppController {
 
   @Get('messages')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
-  findAll() {
-    return this.whatsappService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.whatsappService.findAll(query);
   }
 
   @Get('messages/:phone')
@@ -57,8 +59,8 @@ export class WhatsAppController {
 
   @Get('conversations')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
-  getConversations() {
-    return this.whatsappService.getConversations();
+  getConversations(@Query() query: PaginationQueryDto) {
+    return this.whatsappService.getConversations(query);
   }
 
   @Get('conversations/:phone')

@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Post,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
@@ -17,6 +18,7 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 
 import { UserRole } from '../users/entities/user.entity.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @ApiBearerAuth()
 @Controller('orders')
@@ -31,8 +33,8 @@ export class OrdersController {
     UserRole.VENTAS,
     UserRole.FINANZAS,
   )
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.ordersService.findAll(query);
   }
 
   @Get(':id')

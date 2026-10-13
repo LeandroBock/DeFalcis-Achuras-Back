@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { existsSync, readFileSync } from 'node:fs';
@@ -9,6 +9,12 @@ import { Order, OrderStatus } from '../orders/entities/order.entity.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { Product } from '../products/entities/product.entity.js';
 import { Customer } from '../customers/entities/customer.entity.js';
+import {
+  PaginationQueryDto,
+  findMaybePaginated,
+} from '../common/pagination.js';
+import { arcaConfig } from '../config/arca.config.js';
+import type { ArcaConfig } from '../config/arca.config.js';
 
 export interface EmitResult {
   orderId: string;
@@ -48,13 +54,16 @@ export class InvoicingService {
   // Se crea recién al emitir, así un certificado faltante no tumba el arranque
   private get afip() {
     if (!this.afipClient) {
-      const certPath = process.env.ARCA_CERT_PATH;
-      const keyPath = process.env.ARCA_KEY_PATH;
+      const { cuit, production, accessToken, certPath, keyPath } = this.arca;
+
+      if (!cuit) {
+        throw new Error('Falta configurar ARCA_CUIT para poder facturar');
+      }
 
       const options: Record<string, unknown> = {
-        CUIT: Number(process.env.ARCA_CUIT),
-        production: process.env.ARCA_PRODUCTION === 'true',
-        access_token: process.env.AFIPSDK_ACCESS_TOKEN ?? '',
+        CUIT: Number(cuit),
+        production,
+        access_token: accessToken,
       };
 
       if (certPath && keyPath) {
@@ -73,7 +82,11 @@ export class InvoicingService {
 
     return this.afipClient;
   }
-  private readonly ptoVta = Number(process.env.ARCA_PTO_VTA ?? 1);
+
+  private get ptoVta() {
+    return this.arca.pointOfSale;
+  }
+
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -91,10 +104,17 @@ export class InvoicingService {
 
     @InjectRepository(Customer)
     private readonly customersRepository: Repository<Customer>,
+
+    @Inject(arcaConfig.KEY)
+    private readonly arca: ArcaConfig,
   ) {}
 
-  findAll() {
-    return this.invoicesRepository.find({ order: { createdAt: 'DESC' } });
+  findAll(query: PaginationQueryDto) {
+    return findMaybePaginated(
+      this.invoicesRepository,
+      { order: { createdAt: 'DESC', id: 'DESC' } },
+      query,
+    );
   }
 
   async emit(orderIds: string[]): Promise<EmitResult[]> {

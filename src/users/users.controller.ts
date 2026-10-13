@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 import { UsersService } from './users.service.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
@@ -11,7 +12,10 @@ import { UserRole } from './entities/user.entity.js';
 
 import { CreateAdminUserDto } from './dto/create-admin-user.dto.js';
 
+@ApiBearerAuth()
 @Controller('users')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPER_ADMIN)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -21,15 +25,11 @@ export class UsersController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
   findAll() {
     return this.usersService.findAll();
   }
 
   @Post('admin')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPER_ADMIN)
   createAdminUser(@Body() createAdminUserDto: CreateAdminUserDto) {
     return this.usersService.createAdminUser(createAdminUserDto);
   }

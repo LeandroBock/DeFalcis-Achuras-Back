@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -21,12 +23,23 @@ import { SupplierPaymentsModule } from './supplier-payments/supplier-payments.mo
 import { ReportsModule } from './reports/reports.module.js';
 import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 import { InvoicingModule } from './invoicing/invoicing.module.js';
+import { validateEnv } from './config/env.validation.js';
+import { arcaConfig } from './config/arca.config.js';
+import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
+import { InitialSchema1791900000000 } from './migrations/1791900000000-InitialSchema.js';
+import { SupplierCredit1791904569000 } from './migrations/1791904569000-SupplierCredit.js';
+import { ReportIndexes1791905444000 } from './migrations/1791905444000-ReportIndexes.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateEnv,
+      load: [arcaConfig],
     }),
+
+    // Límite global por IP: 100 requests por minuto.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -42,7 +55,18 @@ import { InvoicingModule } from './invoicing/invoicing.module.js';
         autoLoadEntities: true,
         synchronize: false, // 💡 Nota: se recomienda 'false' en producción para evitar pérdida de datos
         dropSchema: false,
-        logging: true,
+        // Los cambios de esquema se hacen con migraciones (src/migrations) y
+        // se aplican automáticamente al arrancar, una sola vez cada una.
+        migrations: [
+          InitialSchema1791900000000,
+          SupplierCredit1791904569000,
+          ReportIndexes1791905444000,
+        ],
+        migrationsRun: true,
+        // Log de SQL solo en desarrollo.
+        logging: !['production', 'test'].includes(
+          configService.get<string>('NODE_ENV') ?? '',
+        ),
         // ⚠️ ADVERTENCIA: Supabase exige SSL activo en servidores en la nube como Render
         ssl:
           process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
@@ -56,10 +80,6 @@ import { InvoicingModule } from './invoicing/invoicing.module.js';
     ProductsModule,
 
     AuthModule,
-
-    ProductsModule,
-
-    CategoriesModule,
 
     SuppliersModule,
 
@@ -88,6 +108,11 @@ import { InvoicingModule } from './invoicing/invoicing.module.js';
     WhatsAppModule,
 
     InvoicingModule,
+  ],
+
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_FILTER, useClass: DatabaseExceptionFilter },
   ],
 })
 export class AppModule implements OnModuleInit {

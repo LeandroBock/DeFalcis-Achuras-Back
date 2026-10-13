@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -23,6 +24,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { UserRole } from '../users/entities/user.entity.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @ApiBearerAuth()
 @Controller('expenses')
@@ -32,8 +34,8 @@ export class ExpensesController {
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
-  findAll() {
-    return this.expensesService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.expensesService.findAll(query);
   }
 
   @Get('category/:category')

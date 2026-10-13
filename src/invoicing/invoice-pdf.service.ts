@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,6 +14,8 @@ import { Order } from '../orders/entities/order.entity.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { Product } from '../products/entities/product.entity.js';
 import { Customer } from '../customers/entities/customer.entity.js';
+import { arcaConfig } from '../config/arca.config.js';
+import type { ArcaConfig } from '../config/arca.config.js';
 
 // URL base del QR según la especificación de ARCA
 const QR_BASE_URL = 'https://www.afip.gob.ar/fe/qr/';
@@ -62,6 +65,9 @@ export class InvoicePdfService {
 
     @InjectRepository(Customer)
     private readonly customersRepository: Repository<Customer>,
+
+    @Inject(arcaConfig.KEY)
+    private readonly arca: ArcaConfig,
   ) {}
 
   async generate(invoiceId: string) {
@@ -106,7 +112,7 @@ export class InvoicePdfService {
     const isA = invoice.cbteTipo === 1;
     const voucher = VOUCHER[invoice.cbteTipo] ?? { letter: '?', code: '000' };
 
-    const cuit = process.env.ARCA_CUIT ?? '';
+    const { cuit, business } = this.arca;
     const number = `${String(invoice.ptoVta).padStart(5, '0')}-${String(invoice.cbteNro).padStart(8, '0')}`;
     const { docTipo, docNro } = this.resolveDocument(customer?.taxId);
 
@@ -208,16 +214,13 @@ export class InvoicePdfService {
     doc
       .font('Helvetica-Bold')
       .fontSize(13)
-      .text(process.env.ARCA_BUSINESS_NAME ?? '', 50, 58, { width: 215 });
+      .text(business.name, 50, 58, { width: 215 });
     doc
       .font('Helvetica')
       .fontSize(9)
-      .text(
-        `${process.env.ARCA_BUSINESS_ADDRESS ?? ''}\n${process.env.ARCA_IVA_CONDITION ?? ''}`,
-        50,
-        100,
-        { width: 215 },
-      );
+      .text(`${business.address}\n${business.ivaCondition}`, 50, 100, {
+        width: 215,
+      });
 
     doc
       .font('Helvetica-Bold')
@@ -231,15 +234,12 @@ export class InvoicePdfService {
         width: 210,
       })
       .text(`CUIT: ${cuit}`, 335, 108, { width: 210 })
-      .text(`Ingresos Brutos: ${process.env.ARCA_IIBB ?? ''}`, 335, 122, {
+      .text(`Ingresos Brutos: ${business.iibb}`, 335, 122, {
         width: 210,
       })
-      .text(
-        `Inicio de actividades: ${process.env.ARCA_ACTIVITY_START ?? ''}`,
-        335,
-        136,
-        { width: 210 },
-      );
+      .text(`Inicio de actividades: ${business.activityStart}`, 335, 136, {
+        width: 210,
+      });
 
     // Receptor
     const docLabel = docTipo === 80 ? 'CUIT' : docTipo === 96 ? 'DNI' : 'Doc.';

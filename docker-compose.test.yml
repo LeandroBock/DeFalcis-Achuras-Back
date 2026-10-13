@@ -1,0 +1,12 @@
+# Postgres descartable para los tests de integración (npm run test:e2e).
+# Levantar con: docker compose -f docker-compose.test.yml up -d
+services:
+  postgres-test:
+    image: postgres:16.4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data

@@ -8,14 +8,25 @@ import { InjectRepository } from '@nestjs/typeorm';
 
 import { DataSource, Repository } from 'typeorm';
 
-import { SupplierPayment } from './entities/supplier-payment.entity.js';
-
 import { CreateSupplierPaymentDto } from './dto/create-supplier-payment.dto.js';
 
 import {
   Purchase,
   PurchasePaymentStatus,
 } from '../purchases/entities/purchase.entity.js';
+
+import { Supplier } from '../suppliers/entities/supplier.entity.js';
+
+import {
+  SupplierPayment,
+  SupplierPaymentMethod,
+} from './entities/supplier-payment.entity.js';
+
+import {
+  getPurchasePaidAmount,
+  getSupplierCreditBalance,
+  resolvePurchasePaymentStatus,
+} from './purchase-balance.js';
 
 @Injectable()
 export class SupplierPaymentsService {
@@ -35,30 +46,28 @@ export class SupplierPaymentsService {
 
       const paymentRepository = manager.getRepository(SupplierPayment);
 
+      // Bloquea la compra hasta el fin de la transacción: dos pagos
+      // simultáneos no pueden superar la deuda pendiente.
       const purchase = await purchaseRepository.findOne({
         where: {
           id: dto.purchaseId,
         },
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!purchase) {
         throw new NotFoundException('Compra no encontrada');
       }
 
-      const payments = await paymentRepository.find({
-        where: {
-          purchaseId: dto.purchaseId,
-        },
-      });
+      if (purchase.paymentStatus === PurchasePaymentStatus.CANCELLED) {
+        throw new BadRequestException(
+          'No se puede registrar un pago para una compra anulada',
+        );
+      }
 
-      const totalPaid = payments.reduce(
-        (sum, payment) => sum + Number(payment.amount),
-        0,
-      );
+      const currentPaid = await getPurchasePaidAmount(manager, purchase.id);
 
       const purchaseTotal = Number(Number(purchase.total).toFixed(2));
-
-      const currentPaid = Number(totalPaid.toFixed(2));
 
       const pendingAmount = Number((purchaseTotal - currentPaid).toFixed(2));
 
@@ -68,19 +77,36 @@ export class SupplierPaymentsService {
         );
       }
 
+      if (dto.method === SupplierPaymentMethod.SUPPLIER_CREDIT) {
+        // Bloquea al proveedor para que dos pagos simultáneos no usen el
+        // mismo saldo a favor.
+        await manager.getRepository(Supplier).findOne({
+          where: { id: purchase.supplierId },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        const balance = await getSupplierCreditBalance(
+          manager,
+          purchase.supplierId,
+        );
+
+        if (dto.amount > balance) {
+          throw new BadRequestException(
+            `El proveedor no tiene saldo a favor suficiente. Saldo disponible: ${balance.toFixed(2)}`,
+          );
+        }
+      }
+
       const payment = paymentRepository.create(dto);
 
       const savedPayment = await paymentRepository.save(payment);
 
       const newTotalPaid = Number((currentPaid + dto.amount).toFixed(2));
 
-      if (newTotalPaid === 0) {
-        purchase.paymentStatus = PurchasePaymentStatus.PENDING;
-      } else if (newTotalPaid < purchaseTotal) {
-        purchase.paymentStatus = PurchasePaymentStatus.PARTIAL;
-      } else {
-        purchase.paymentStatus = PurchasePaymentStatus.PAID;
-      }
+      purchase.paymentStatus = resolvePurchasePaymentStatus(
+        purchaseTotal,
+        newTotalPaid,
+      );
 
       await purchaseRepository.save(purchase);
 
@@ -91,6 +117,38 @@ export class SupplierPaymentsService {
         pendingAmount: Number((purchaseTotal - newTotalPaid).toFixed(2)),
       };
     });
+  }
+
+  async getSupplierCredit(supplierId: string) {
+    const supplier = await this.dataSource
+      .getRepository(Supplier)
+      .findOne({ where: { id: supplierId } });
+
+    if (!supplier) {
+      throw new NotFoundException('Proveedor no encontrado');
+    }
+
+    const balance = await getSupplierCreditBalance(
+      this.dataSource.manager,
+      supplierId,
+    );
+
+    // Negativos: saldo generado. Positivos: saldo usado para pagar.
+    const movements = await this.supplierPaymentsRepository
+      .createQueryBuilder('payment')
+      .innerJoin(Purchase, 'purchase', 'purchase.id = payment.purchaseId')
+      .where('purchase.supplierId = :supplierId', { supplierId })
+      .andWhere('payment.method = :method', {
+        method: SupplierPaymentMethod.SUPPLIER_CREDIT,
+      })
+      .orderBy('payment.createdAt', 'ASC')
+      .getMany();
+
+    return {
+      supplierId,
+      balance,
+      movements,
+    };
   }
 
   async findByPurchase(purchaseId: string) {

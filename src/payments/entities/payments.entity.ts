@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -11,6 +12,7 @@ export enum PaymentMethod {
   MERCADO_PAGO = 'mercado_pago',
 }
 
+@Index('IDX_PAYMENTS_orderId', ['orderId'])
 @Entity('PAYMENTS')
 export class Payment {
   @PrimaryGeneratedColumn('uuid')

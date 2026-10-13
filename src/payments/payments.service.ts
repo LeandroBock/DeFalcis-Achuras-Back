@@ -9,7 +9,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 
 import { Payment } from './entities/payments.entity.js';
-import { Order, OrderPaymentStatus } from '../orders/entities/order.entity.js';
+import {
+  Order,
+  OrderPaymentStatus,
+  OrderStatus,
+} from '../orders/entities/order.entity.js';
 
 import { CreatePaymentDto } from './dto/create-payment.dto.js';
 
@@ -33,17 +37,20 @@ export class PaymentsService {
 
       const paymentRepository = manager.getRepository(Payment);
 
+      // Bloquea el pedido hasta el fin de la transacción: dos pagos
+      // simultáneos no pueden superar el saldo pendiente.
       const order = await orderRepository.findOne({
         where: {
           id: orderId,
         },
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!order) {
         throw new NotFoundException('Pedido no encontrado');
       }
 
-      if (order.status === 'cancelled') {
+      if (order.status === OrderStatus.CANCELLED) {
         throw new BadRequestException(
           'No se puede registrar un pago para un pedido cancelado',
         );

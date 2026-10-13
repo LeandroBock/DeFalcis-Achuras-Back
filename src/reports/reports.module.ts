@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { Supplier } from '../suppliers/entities/supplier.entity.js';
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
@@ -29,17 +28,6 @@ import { OrderItem } from '../order-items/entities/order-item.entity.js';
     ]),
 
     ConfigModule,
-
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: {
-          expiresIn: '1d',
-        },
-      }),
-    }),
   ],
 
   controllers: [ReportsController],

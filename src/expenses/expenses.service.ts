@@ -8,6 +8,10 @@ import { Expense, ExpenseCategory } from './entities/expense.entity.js';
 
 import { CreateExpenseDto } from './dto/create-expense.dto.js';
 import { UpdateExpenseDto } from './dto/update-expense.dto.js';
+import {
+  PaginationQueryDto,
+  findMaybePaginated,
+} from '../common/pagination.js';
 
 @Injectable()
 export class ExpensesService {
@@ -22,12 +26,12 @@ export class ExpensesService {
     return this.expensesRepository.save(expense);
   }
 
-  async findAll() {
-    return this.expensesRepository.find({
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+  async findAll(query: PaginationQueryDto) {
+    return findMaybePaginated(
+      this.expensesRepository,
+      { order: { createdAt: 'DESC', id: 'DESC' } },
+      query,
+    );
   }
 
   async findOne(id: string) {

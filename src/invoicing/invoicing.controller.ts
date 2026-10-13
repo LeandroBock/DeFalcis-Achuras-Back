@@ -7,6 +7,7 @@ import {
   Post,
   StreamableFile,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { InvoicePdfService } from './invoice-pdf.service.js';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -18,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { UserRole } from '../users/entities/user.entity.js';
+import { PaginationQueryDto } from '../common/pagination.js';
 
 @ApiBearerAuth()
 @Controller('invoicing')
@@ -41,8 +43,8 @@ export class InvoicingController {
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
-  findAll() {
-    return this.invoicingService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.invoicingService.findAll(query);
   }
 
   @Post('emit')

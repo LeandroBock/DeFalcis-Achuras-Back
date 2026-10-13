@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Product, ProductUnit } from '../products/entities/product.entity.js';
 import { Customer } from '../customers/entities/customer.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
@@ -20,6 +20,13 @@ import {
   WhatsAppOrderStatus,
 } from './entities/whatsapp-order.entity.js';
 import { PaymentsService } from '../payments/payments.service.js';
+import {
+  PaginationQueryDto,
+  findMaybePaginated,
+  isPaginated,
+  pageAndLimit,
+  toPaginated,
+} from '../common/pagination.js';
 
 @Injectable()
 export class WhatsAppService {
@@ -40,6 +47,7 @@ export class WhatsAppService {
     private readonly ordersRepository: Repository<Order>,
     private readonly ordersService: OrdersService,
     private readonly paymentsService: PaymentsService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async createIncomingMessage(data: {
@@ -171,6 +179,9 @@ export class WhatsAppService {
     const salePrice = Number(product.salePrice);
     const subtotal = quantity * salePrice;
 
+    // Informativo: las achuras pierden peso (agua), así que el stock
+    // registrado puede no coincidir con el real. Nunca se rechaza un pedido
+    // por falta de stock.
     const available = stock >= quantity;
 
     return {
@@ -185,7 +196,7 @@ export class WhatsAppService {
       available,
       message: available
         ? 'Producto y stock disponibles.'
-        : 'No hay stock suficiente.',
+        : 'El stock registrado no alcanza; el pedido se toma igual.',
     };
   }
 
@@ -197,10 +208,6 @@ export class WhatsAppService {
     }
 
     if (!analysis.quantity) {
-      return analysis;
-    }
-
-    if (!analysis.available) {
       return analysis;
     }
 
@@ -235,52 +242,63 @@ export class WhatsAppService {
   }
 
   async confirmOrder(id: string) {
-    const whatsappOrder = await this.whatsappOrdersRepository.findOne({
-      where: {
-        id,
-      },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const whatsappOrderRepository = manager.getRepository(WhatsAppOrder);
 
-    if (!whatsappOrder) {
-      throw new NotFoundException('Pedido de WhatsApp no encontrado');
-    }
-
-    if (whatsappOrder.status !== WhatsAppOrderStatus.PENDING) {
-      throw new BadRequestException('El pedido de WhatsApp ya fue procesado');
-    }
-
-    if (!whatsappOrder.customerId) {
-      throw new BadRequestException('No se pudo identificar al cliente');
-    }
-
-    const result = await this.ordersService.create({
-      customerId: whatsappOrder.customerId,
-      items: [
-        {
-          productId: whatsappOrder.productId,
-          quantity: Number(whatsappOrder.quantity),
+      // Bloquea el pedido de WhatsApp: si se confirma dos veces a la vez, la
+      // segunda espera y ve el estado CONFIRMED, en lugar de crear otro pedido.
+      const whatsappOrder = await whatsappOrderRepository.findOne({
+        where: {
+          id,
         },
-      ],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!whatsappOrder) {
+        throw new NotFoundException('Pedido de WhatsApp no encontrado');
+      }
+
+      if (whatsappOrder.status !== WhatsAppOrderStatus.PENDING) {
+        throw new BadRequestException('El pedido de WhatsApp ya fue procesado');
+      }
+
+      if (!whatsappOrder.customerId) {
+        throw new BadRequestException('No se pudo identificar al cliente');
+      }
+
+      const result = await this.ordersService.create(
+        {
+          customerId: whatsappOrder.customerId,
+          items: [
+            {
+              productId: whatsappOrder.productId,
+              quantity: Number(whatsappOrder.quantity),
+            },
+          ],
+        },
+        manager,
+      );
+
+      whatsappOrder.status = WhatsAppOrderStatus.CONFIRMED;
+      whatsappOrder.orderId = result.order.id;
+
+      await whatsappOrderRepository.save(whatsappOrder);
+
+      return {
+        message: 'Pedido confirmado correctamente.',
+        whatsappOrder,
+        order: result.order,
+        items: result.items,
+      };
     });
-
-    whatsappOrder.status = WhatsAppOrderStatus.CONFIRMED;
-    whatsappOrder.orderId = result.order.id;
-
-    await this.whatsappOrdersRepository.save(whatsappOrder);
-    return {
-      message: 'Pedido confirmado correctamente.',
-      whatsappOrder,
-      order: result.order,
-      items: result.items,
-    };
   }
 
-  async findAll() {
-    return this.messagesRepository.find({
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+  async findAll(query: PaginationQueryDto) {
+    return findMaybePaginated(
+      this.messagesRepository,
+      { order: { createdAt: 'DESC', id: 'DESC' } },
+      query,
+    );
   }
 
   async findByPhone(phone: string) {
@@ -378,22 +396,6 @@ export class WhatsAppService {
         message:
           `Encontré ${analysis.productName}, ` +
           'pero necesito saber qué cantidad querés.',
-      });
-
-      return {
-        incomingMessage,
-        outgoingMessage,
-        analysis,
-      };
-    }
-
-    if (!analysis.available) {
-      const outgoingMessage = await this.createOutgoingMessage({
-        phone: data.phone,
-        message:
-          `No tenemos suficiente stock de ` +
-          `${analysis.productName}. ` +
-          `Stock disponible: ${analysis.stock} ${analysis.unit}.`,
       });
 
       return {
@@ -508,35 +510,56 @@ export class WhatsAppService {
       orders,
     };
   }
-  async getConversations() {
-    const messages = await this.messagesRepository.find({
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+  // Último mensaje de cada teléfono, del más reciente al más antiguo, con el
+  // cliente asociado (si varios comparten teléfono: el activo más antiguo).
+  // Se resuelve en una sola consulta.
+  async getConversations(query: PaginationQueryDto) {
+    const paginated = isPaginated(query);
+    const { limit, skip } = pageAndLimit(query);
 
-    const uniquePhones = [...new Set(messages.map((message) => message.phone))];
-
-    const conversations = await Promise.all(
-      uniquePhones.map(async (phone) => {
-        const customer = await this.customersRepository.findOne({
-          where: {
-            phone,
-          },
-        });
-
-        const lastMessage = messages.find((message) => message.phone === phone);
-
-        return {
-          phone,
-          customerId: customer?.id ?? null,
-          customerName: customer?.name ?? 'Cliente desconocido',
-          lastMessage: lastMessage?.message ?? '',
-          lastMessageDate: lastMessage?.createdAt ?? null,
-        };
-      }),
+    const rows: {
+      phone: string;
+      message: string;
+      createdAt: Date;
+      customerId: string | null;
+      customerName: string | null;
+    }[] = await this.messagesRepository.query(
+      `
+      SELECT last.phone, last.message, last."createdAt",
+             customer.id AS "customerId", customer.name AS "customerName"
+      FROM (
+        SELECT DISTINCT ON (phone) phone, message, "createdAt"
+        FROM "WHATSAPP_MESSAGES"
+        ORDER BY phone, "createdAt" DESC
+      ) last
+      LEFT JOIN LATERAL (
+        SELECT id, name FROM "CUSTOMERS" c
+        WHERE c.phone = last.phone
+        ORDER BY c."isActive" DESC, c."createdAt"
+        LIMIT 1
+      ) customer ON true
+      ORDER BY last."createdAt" DESC, last.phone
+      ${paginated ? 'LIMIT $1 OFFSET $2' : ''}
+      `,
+      paginated ? [limit, skip] : [],
     );
 
-    return conversations;
+    const conversations = rows.map((row) => ({
+      phone: row.phone,
+      customerId: row.customerId ?? null,
+      customerName: row.customerName ?? 'Cliente desconocido',
+      lastMessage: row.message ?? '',
+      lastMessageDate: row.createdAt ?? null,
+    }));
+
+    if (!paginated) {
+      return conversations;
+    }
+
+    const [{ total }] = await this.messagesRepository.query(
+      'SELECT COUNT(DISTINCT phone)::int AS total FROM "WHATSAPP_MESSAGES"',
+    );
+
+    return toPaginated(conversations, total, query);
   }
 }

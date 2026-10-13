@@ -7,6 +7,10 @@ import { CreateUserDto } from './dto/create-user.dto.js';
 import * as bcrypt from 'bcrypt';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto.js';
 
+export const BCRYPT_ROUNDS = 12;
+
+export type PublicUser = Omit<User, 'password'>;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -14,35 +18,44 @@ export class UsersService {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-
-    const user = this.usersRepository.create({
-      ...createUserDto,
-      password: hashedPassword,
-    });
-
-    return this.usersRepository.save(user);
+  async create(createUserDto: CreateUserDto): Promise<PublicUser> {
+    return this.createWithHashedPassword(createUserDto);
   }
 
   async findAll(): Promise<User[]> {
     return this.usersRepository.find();
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findOne({
-      where: { email },
-    });
+  // Incluye el hash de la contraseña: usar solo para autenticación.
+  async findByEmailWithPassword(email: string): Promise<User | null> {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .where('user.email = :email', { email })
+      .getOne();
   }
 
-  async createAdminUser(createUserDto: CreateAdminUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+  async createAdminUser(
+    createUserDto: CreateAdminUserDto,
+  ): Promise<PublicUser> {
+    return this.createWithHashedPassword(createUserDto);
+  }
+
+  private async createWithHashedPassword(
+    dto: CreateUserDto | CreateAdminUserDto,
+  ): Promise<PublicUser> {
+    const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = this.usersRepository.create({
-      ...createUserDto,
+      name: dto.name,
+      email: dto.email,
+      role: dto.role,
       password: hashedPassword,
     });
 
-    return this.usersRepository.save(user);
+    const { password: _password, ...savedUser } =
+      await this.usersRepository.save(user);
+
+    return savedUser;
   }
 }

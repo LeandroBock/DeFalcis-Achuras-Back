@@ -16,12 +16,15 @@ import { RolesGuard } from './guards/roles.guard.js';
 
     ConfigModule,
 
+    // Única configuración de JWT de la app (global): no registrar JwtModule
+    // en otros módulos.
     JwtModule.registerAsync({
+      global: true,
       imports: [ConfigModule],
       inject: [ConfigService],
 
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
+        secret: configService.getOrThrow<string>('JWT_SECRET'),
 
         signOptions: {
           expiresIn: '1d',

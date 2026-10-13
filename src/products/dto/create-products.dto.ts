@@ -5,11 +5,9 @@ import {
   IsOptional,
   IsString,
   Max,
-  Min,
 } from 'class-validator';
 
 import { ProductUnit } from '../entities/product.entity.js';
-import { IsUUID } from 'class-validator';
 
 export class CreateProductDto {
   @IsNotEmpty()

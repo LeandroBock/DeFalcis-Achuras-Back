@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { Customer } from '../customers/entities/customer.entity.js';
@@ -16,13 +15,6 @@ import { PaymentsModule } from '../payments/payments.module.js';
 @Module({
   imports: [
     ConfigModule,
-
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: () => ({
-        secret: process.env.JWT_SECRET,
-      }),
-    }),
 
     OrdersModule,
     PaymentsModule,

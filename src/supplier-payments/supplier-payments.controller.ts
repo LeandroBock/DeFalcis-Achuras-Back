@@ -36,6 +36,15 @@ export class SupplierPaymentsController {
     return this.supplierPaymentsService.findByPurchase(purchaseId);
   }
 
+  @Get('supplier/:supplierId/credit')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
+  getSupplierCredit(
+    @Param('supplierId', ParseUUIDPipe)
+    supplierId: string,
+  ) {
+    return this.supplierPaymentsService.getSupplierCredit(supplierId);
+  }
+
   @Post()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.FINANZAS)
   create(@Body() dto: CreateSupplierPaymentDto) {

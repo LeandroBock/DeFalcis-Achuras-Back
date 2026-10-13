@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -24,6 +25,7 @@ export enum WhatsAppMessageStatus {
   FAILED = 'failed',
 }
 
+@Index('IDX_WHATSAPP_MESSAGES_phone', ['phone'])
 @Entity('WHATSAPP_MESSAGES')
 export class WhatsAppMessage {
   @PrimaryGeneratedColumn('uuid')

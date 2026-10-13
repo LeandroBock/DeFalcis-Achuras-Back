@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -6,6 +6,8 @@ import { Category } from '../entities/category.entity.js';
 
 @Injectable()
 export class CategoriesSeeder implements OnModuleInit {
+  private readonly logger = new Logger(CategoriesSeeder.name);
+
   constructor(
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
@@ -53,6 +55,6 @@ export class CategoriesSeeder implements OnModuleInit {
       }
     }
 
-    console.log('Categorías verificadas correctamente');
+    this.logger.log('Categorías verificadas correctamente');
   }
 }
