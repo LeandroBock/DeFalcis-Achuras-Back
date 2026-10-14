@@ -13,6 +13,7 @@ export enum PaymentMethod {
 }
 
 @Index('IDX_PAYMENTS_orderId', ['orderId'])
+@Index('IDX_PAYMENTS_collectedById', ['collectedById'])
 @Entity('PAYMENTS')
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
@@ -36,6 +37,11 @@ export class Payment {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  // Quién cobró: el repartidor en la entrega (para la rendición) o quien lo
+  // registró en la oficina.
+  @Column({ type: 'uuid', nullable: true })
+  collectedById?: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

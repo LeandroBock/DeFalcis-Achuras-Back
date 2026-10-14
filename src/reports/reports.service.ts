@@ -19,7 +19,9 @@ import { Expense } from '../expenses/entities/expense.entity.js';
 import { Product } from '../products/entities/product.entity.js';
 import { SupplierPayment } from '../supplier-payments/entities/supplier-payment.entity.js';
 
-const SOLD_STATUSES = [OrderStatus.CONFIRMED, OrderStatus.DELIVERED];
+// Solo es venta lo entregado (con los kilos reales); las notas de pedido
+// pendientes no cuentan. La fecha de una venta es la de entrega.
+const SOLD_STATUSES = [OrderStatus.DELIVERED];
 
 const OPEN_PURCHASE_STATUSES = [
   PurchasePaymentStatus.PENDING,
@@ -200,11 +202,11 @@ export class ReportsService {
       .select('o.customerId', 'customerId')
       .addSelect('c.name', 'customerName')
       .addSelect('o.id', 'orderId')
-      .addSelect('o.createdAt', 'orderDate')
+      .addSelect('o.deliveredAt', 'orderDate')
       .addSelect('o.total', 'total')
       .addSelect('COALESCE(pay.paid, 0)', 'paid')
       .addSelect('o.paymentStatus', 'paymentStatus')
-      .orderBy('o.createdAt', 'DESC')
+      .orderBy('o.deliveredAt', 'DESC')
       .getRawMany();
 
     return rows.map((row) => ({
@@ -254,12 +256,13 @@ export class ReportsService {
       repository: Repository<T>,
       column: string,
       where?: (qb: SelectQueryBuilder<T>) => SelectQueryBuilder<T>,
+      dateColumn = 'createdAt',
     ) => {
       let qb = repository
         .createQueryBuilder('t')
         .select(`COALESCE(SUM(t.${column}), 0)`, 'total');
 
-      qb = this.applyDateRange(qb, 't', range);
+      qb = this.applyDateRange(qb, 't', range, dateColumn);
 
       return (where ? where(qb) : qb)
         .getRawOne()
@@ -268,8 +271,12 @@ export class ReportsService {
 
     const [totalSales, totalCollected, totalPurchases, totalExpenses] =
       await Promise.all([
-        sum(this.ordersRepository, 'total', (qb) =>
-          qb.andWhere('t.status IN (:...sold)', { sold: SOLD_STATUSES }),
+        sum(
+          this.ordersRepository,
+          'total',
+          (qb) =>
+            qb.andWhere('t.status IN (:...sold)', { sold: SOLD_STATUSES }),
+          'deliveredAt',
         ),
 
         sum(this.paymentsRepository, 'amount'),
@@ -310,7 +317,7 @@ export class ReportsService {
       .where('o.status IN (:...sold)', { sold: SOLD_STATUSES })
       .andWhere('o.total - COALESCE(pay.paid, 0) > 0');
 
-    return this.applyDateRange(qb, 'o', range);
+    return this.applyDateRange(qb, 'o', range, 'deliveredAt');
   }
 
   // Compras pendientes o parciales con saldo por pagar.
@@ -344,13 +351,14 @@ export class ReportsService {
     qb: SelectQueryBuilder<T>,
     alias: string,
     range: DateRange,
+    column = 'createdAt',
   ) {
     if (range.start) {
-      qb.andWhere(`${alias}.createdAt >= :start`, { start: range.start });
+      qb.andWhere(`${alias}.${column} >= :start`, { start: range.start });
     }
 
     if (range.end) {
-      qb.andWhere(`${alias}.createdAt <= :end`, { end: range.end });
+      qb.andWhere(`${alias}.${column} <= :end`, { end: range.end });
     }
 
     return qb;
@@ -516,7 +524,7 @@ export class ReportsService {
           .leftJoin(Customer, 'c', 'c.id = o.customerId')
           .leftJoin(Product, 'product', 'product.id = item.productId')
           .select('o.id', 'orderId')
-          .addSelect('o.createdAt', 'date')
+          .addSelect('o.deliveredAt', 'date')
           .addSelect('o.paymentStatus', 'paymentStatus')
           .addSelect('c.name', 'customerName')
           .addSelect('product.name', 'productName')
@@ -525,12 +533,15 @@ export class ReportsService {
           .addSelect('item.quantity', 'quantity')
           .addSelect('item.unitPrice', 'unitPrice')
           .addSelect('item.subtotal', 'subtotal')
-          .where('o.status IN (:...sold)', { sold: SOLD_STATUSES }),
+          .where('o.status IN (:...sold)', { sold: SOLD_STATUSES })
+          // Productos de la nota que el cliente no llevó.
+          .andWhere('item.quantity > 0'),
         'o',
         range,
+        'deliveredAt',
       )
         // Dentro de un mismo pedido, los productos en el orden en que se cargaron.
-        .orderBy('o.createdAt', 'DESC')
+        .orderBy('o.deliveredAt', 'DESC')
         .addOrderBy('item.createdAt', 'ASC')
         .addOrderBy('item.id', 'ASC')
         .getRawMany(),

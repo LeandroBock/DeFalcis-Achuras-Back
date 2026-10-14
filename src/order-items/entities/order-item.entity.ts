@@ -18,12 +18,22 @@ export class OrderItem {
   @Column({ type: 'uuid' })
   productId: string;
 
+  // Kilos/unidades entregados (mientras la nota está pendiente, los pedidos).
   @Column({
     type: 'decimal',
     precision: 12,
     scale: 3,
   })
   quantity: number;
+
+  // Lo que se pidió en la nota (0 si se agregó en el momento de la entrega).
+  @Column({
+    type: 'decimal',
+    precision: 12,
+    scale: 3,
+    default: 0,
+  })
+  requestedQuantity: number;
 
   @Column({
     type: 'decimal',

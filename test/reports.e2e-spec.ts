@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 
-import { Order, OrderStatus } from '../src/orders/entities/order.entity.js';
+import { Order } from '../src/orders/entities/order.entity.js';
 import { Payment } from '../src/payments/entities/payments.entity.js';
 import { UserRole } from '../src/users/entities/user.entity.js';
 
@@ -10,7 +10,8 @@ import { TestApp, createTestApp } from './support/test-app.js';
 //
 // Ventas  · Pedido 1: 2 kg × $1000 = $2000, cobrado $500  → debe $1500
 //         · Pedido 2: 1 kg × $1000 = $1000, cobrado $1000 (enero 2025)
-//         · Pedido 3: $1000 cancelado → no cuenta
+//         · Pedido 3: $1000 anulado → no cuenta
+//         · Nota de 5 kg pendiente de entrega → todavía no es venta
 // Compras · A: crédito 10 kg × $500 = $5000, pagado $2000 → debemos $3000
 //         · B: contado 4 kg = $2000 (pagada)
 //         · C: contado 2 kg = $1000, anulada → no cuenta
@@ -38,29 +39,31 @@ describe('Reportes', () => {
     await t.createProduct({ stock: 3 }); // stock bajo
     await t.createProduct({ stock: 0, isActive: false }); // no cuenta
 
-    const order = async (kg: number) =>
-      (
-        await post('/orders', {
-          customerId: customer.id,
-          items: [{ productId: sold.id, quantity: kg }],
-        })
-      ).body.order.id as string;
+    const items = (kg: number) => [{ productId: sold.id, quantity: kg }];
+    const note = async (kg: number) =>
+      (await post('/orders', { customerId: customer.id, items: items(kg) }))
+        .body.order.id as string;
+    const deliver = (orderId: string, kg: number, paid: number) =>
+      post(`/orders/${orderId}/deliver`, {
+        items: items(kg),
+        payments: [{ amount: paid, method: 'cash' }],
+      });
 
-    order1 = await order(2);
-    order2 = await order(1);
-    const order3 = await order(1);
+    order1 = await note(2);
+    order2 = await note(1);
+    const order3 = await note(1);
+    await note(5); // nota pendiente: todavía no es venta
 
-    await post('/payments', { orderId: order1, amount: 500, method: 'cash' });
-    await post('/payments', { orderId: order2, amount: 1000, method: 'cash' });
-    await t.dataSource
-      .getRepository(Order)
-      .update(order3, { status: OrderStatus.CANCELLED });
+    await deliver(order1, 2, 500);
+    await deliver(order2, 1, 1000);
+    await post(`/orders/${order3}/cancel`, {});
 
-    // El pedido 2 y su pago quedan en enero de 2025 para probar el filtro.
+    // El pedido 2 y su pago quedan en enero de 2025 para probar el filtro
+    // (la fecha de una venta es la de entrega).
     const january = new Date('2025-01-15T12:00:00');
     await t.dataSource
       .getRepository(Order)
-      .update(order2, { createdAt: january });
+      .update(order2, { deliveredAt: january });
     await t.dataSource
       .getRepository(Payment)
       .update({ orderId: order2 }, { createdAt: january });
@@ -112,7 +115,7 @@ describe('Reportes', () => {
       },
       inventory: {
         totalProducts: 3,
-        productsWithoutStock: 1, // el vendido quedó en -4
+        productsWithoutStock: 1, // el vendido quedó en -3
         productsWithLowStock: 1,
       },
       receivables: { pending: 1500 },

@@ -14,19 +14,24 @@ describe('Pagos de clientes', () => {
 
   afterAll(() => t.close());
 
-  // Pedido de $1000 (1 kg a $1000).
+  // Pedido de $1000 (1 kg a $1000) ya entregado, sin cobrar.
   const createOrder = async () => {
     const customer = await t.createCustomer();
     const product = await t.createProduct({ salePrice: 1000 });
+    const items = [{ productId: product.id, quantity: 1 }];
 
     const res = await t
       .http()
       .post('/orders')
       .set('authorization', auth)
-      .send({
-        customerId: customer.id,
-        items: [{ productId: product.id, quantity: 1 }],
-      })
+      .send({ customerId: customer.id, items })
+      .expect(201);
+
+    await t
+      .http()
+      .post(`/orders/${res.body.order.id}/deliver`)
+      .set('authorization', auth)
+      .send({ items })
       .expect(201);
 
     return res.body.order.id as string;

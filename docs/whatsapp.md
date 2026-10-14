@@ -93,7 +93,7 @@ events.addEventListener('connection', (e) => {
 
 1. `POST /whatsapp/orders/prepare` con `{ "phone": "5493415556789", "message": "quiero 3 kg de chinchulín" }`: interpreta el texto y devuelve el pedido armado (`order`) y un mensaje de confirmación sugerido (`confirmationMessage`). Si no entiende el producto o la cantidad, devuelve `found: false` o no trae `quantity`.
 2. Opcional: enviarle al cliente `confirmationMessage` con el endpoint del punto 3.
-3. `POST /whatsapp/orders/:id/confirm`: crea el pedido real (descuenta stock aunque quede negativo). El número tiene que ser de un cliente cargado.
+3. `POST /whatsapp/orders/:id/confirm`: crea la **nota de pedido** (pendiente de entrega). El stock se descuenta y la venta se registra recién cuando el repartidor carga la entrega con los kilos reales. El número tiene que ser de un cliente cargado.
 
 Para pedidos con varios productos, usar el alta normal de pedidos (`POST /orders`) con el `customerId` de la conversación.
 

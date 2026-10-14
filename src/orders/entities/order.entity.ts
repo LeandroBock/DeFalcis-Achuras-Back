@@ -7,6 +7,9 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+// Circuito: la venta nace como nota de pedido (PENDING) con kilos estimados;
+// al entregar se pesa, se cobra y pasa a DELIVERED con los kilos reales.
+// CONFIRMED ya no se usa (los pedidos anteriores pasaron a DELIVERED).
 export enum OrderStatus {
   PENDING = 'pending',
   CONFIRMED = 'confirmed',
@@ -21,6 +24,7 @@ export enum OrderPaymentStatus {
 }
 
 @Index('IDX_ORDERS_createdAt', ['createdAt'])
+@Index('IDX_ORDERS_assignedToId', ['assignedToId'])
 @Entity('ORDERS')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -53,6 +57,23 @@ export class Order {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  // Repartidor (usuario con rol reparto) que la tiene que entregar.
+  @Column({ type: 'uuid', nullable: true })
+  assignedToId?: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  deliveryDate?: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  deliveredAt?: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  deliveredById?: string | null;
+
+  // Comentario de la entrega, o motivo si no se pudo entregar.
+  @Column({ type: 'text', nullable: true })
+  deliveryComment?: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

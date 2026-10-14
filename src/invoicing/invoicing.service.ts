@@ -25,7 +25,8 @@ export interface EmitResult {
   error?: string;
 }
 
-const INVOICEABLE_STATUSES = [OrderStatus.CONFIRMED, OrderStatus.DELIVERED];
+// Solo se factura lo entregado (con los kilos reales).
+const INVOICEABLE_STATUSES = [OrderStatus.DELIVERED];
 
 // Tipos de comprobante
 const FACTURA_A = 1;
@@ -148,7 +149,7 @@ export class InvoicingService {
       return {
         orderId,
         ok: false,
-        error: 'Solo se pueden facturar ventas confirmadas o entregadas',
+        error: 'Solo se pueden facturar notas de pedido ya entregadas',
       };
     }
 

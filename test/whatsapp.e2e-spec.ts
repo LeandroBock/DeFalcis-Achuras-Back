@@ -250,7 +250,7 @@ describe('WhatsApp conectado (cliente simulado)', () => {
       });
     });
 
-    it('del chat se prepara y confirma un pedido', async () => {
+    it('del chat se prepara y confirma una nota de pedido', async () => {
       const customer = await t.createCustomer({ phone: '3412223333' });
       const product = await t.createProduct({ name: 'Molleja', stock: 10 });
 
@@ -263,13 +263,15 @@ describe('WhatsApp conectado (cliente simulado)', () => {
 
       expect(prepared.body.order.customerId).toBe(customer.id);
 
-      await t
+      const confirmed = await t
         .http()
         .post(`/whatsapp/orders/${prepared.body.order.id}/confirm`)
         .set('authorization', ventas)
         .expect(201);
 
-      expect(await t.stockOf(product.id)).toBe(8);
+      // Queda como nota de pedido: el stock se descuenta al entregar.
+      expect(confirmed.body.order.status).toBe('pending');
+      expect(await t.stockOf(product.id)).toBe(10);
     });
   });
 

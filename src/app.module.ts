@@ -30,6 +30,7 @@ import { InitialSchema1791900000000 } from './migrations/1791900000000-InitialSc
 import { SupplierCredit1791904569000 } from './migrations/1791904569000-SupplierCredit.js';
 import { ReportIndexes1791905444000 } from './migrations/1791905444000-ReportIndexes.js';
 import { WhatsAppConnection1791937082000 } from './migrations/1791937082000-WhatsAppConnection.js';
+import { OrderNotesAndDelivery1791944352000 } from './migrations/1791944352000-OrderNotesAndDelivery.js';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { WhatsAppConnection1791937082000 } from './migrations/1791937082000-What
           SupplierCredit1791904569000,
           ReportIndexes1791905444000,
           WhatsAppConnection1791937082000,
+          OrderNotesAndDelivery1791944352000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.

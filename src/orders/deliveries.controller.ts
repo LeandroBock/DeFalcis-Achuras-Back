@@ -1,0 +1,85 @@
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
+import { isDateString, isUUID } from 'class-validator';
+
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
+import { UserRole } from '../users/entities/user.entity.js';
+
+import {
+  DeliveriesService,
+  todayInBusinessTimezone,
+} from './deliveries.service.js';
+
+@ApiBearerAuth()
+@Controller('deliveries')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class DeliveriesController {
+  constructor(private readonly deliveriesService: DeliveriesService) {}
+
+  // Repartidores disponibles para asignar notas.
+  @Get('drivers')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
+  drivers() {
+    return this.deliveriesService.drivers();
+  }
+
+  // Notas pendientes del repartidor que consulta (?date=AAAA-MM-DD opcional).
+  @Get('mine')
+  @Roles(UserRole.REPARTO, UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  mine(@CurrentUser() user: AuthUser, @Query('date') date?: string) {
+    if (date !== undefined && !isDateString(date, { strict: true })) {
+      throw new BadRequestException(
+        'La fecha debe tener el formato AAAA-MM-DD',
+      );
+    }
+
+    return this.deliveriesService.pendingFor(user.sub, date);
+  }
+
+  // Rendición de un repartidor en un día (por defecto, hoy). Un repartidor
+  // solo puede ver la suya.
+  @Get('settlement')
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.FINANZAS,
+    UserRole.REPARTO,
+  )
+  settlement(
+    @CurrentUser() user: AuthUser,
+    @Query('userId') userId?: string,
+    @Query('date') date?: string,
+  ) {
+    const driverId = userId ?? user.sub;
+
+    if (!isUUID(driverId)) {
+      throw new BadRequestException('Repartidor inválido');
+    }
+
+    if (date !== undefined && !isDateString(date, { strict: true })) {
+      throw new BadRequestException(
+        'La fecha debe tener el formato AAAA-MM-DD',
+      );
+    }
+
+    if (user.role === UserRole.REPARTO && driverId !== user.sub) {
+      throw new ForbiddenException('Solo podés ver tu propia rendición');
+    }
+
+    return this.deliveriesService.settlement(
+      driverId,
+      date ?? todayInBusinessTimezone(),
+    );
+  }
+}

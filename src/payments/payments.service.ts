@@ -29,7 +29,8 @@ export class PaymentsService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(createPaymentDto: CreatePaymentDto) {
+  // collectedById: quién registra el cobro (para la rendición).
+  async create(createPaymentDto: CreatePaymentDto, collectedById?: string) {
     const { orderId, amount, method, notes } = createPaymentDto;
 
     return this.dataSource.transaction(async (manager) => {
@@ -53,6 +54,13 @@ export class PaymentsService {
       if (order.status === OrderStatus.CANCELLED) {
         throw new BadRequestException(
           'No se puede registrar un pago para un pedido cancelado',
+        );
+      }
+
+      // Antes de pesar no se sabe el total: se cobra al entregar.
+      if (order.status === OrderStatus.PENDING) {
+        throw new BadRequestException(
+          'La nota de pedido todavía no se entregó: el cobro se registra al entregarla',
         );
       }
 
@@ -84,6 +92,7 @@ export class PaymentsService {
         amount,
         method,
         notes,
+        collectedById,
       });
 
       const savedPayment = await paymentRepository.save(payment);
