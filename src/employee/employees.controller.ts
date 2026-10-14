@@ -22,7 +22,13 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import { UserRole } from '../users/entities/user.entity.js';
 
 import { UpdateEmployeeDto } from './dto/update-employee.dto.js';
+import {
+  CreateEmployeeAccountDto,
+  UpdateEmployeeAccountDto,
+} from './dto/employee-account.dto.js';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth()
 @Controller('employees')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class EmployeesController {
@@ -68,5 +74,25 @@ export class EmployeesController {
     id: string,
   ) {
     return this.employeesService.deactivate(id);
+  }
+
+  // Acceso a la app (por ejemplo, la cuenta de un repartidor). Solo el super
+  // admin puede dar, cambiar o quitar accesos.
+  @Post(':id/account')
+  @Roles(UserRole.SUPER_ADMIN)
+  createAccount(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateEmployeeAccountDto,
+  ) {
+    return this.employeesService.createAccount(id, dto);
+  }
+
+  @Patch(':id/account')
+  @Roles(UserRole.SUPER_ADMIN)
+  updateAccount(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeAccountDto,
+  ) {
+    return this.employeesService.updateAccount(id, dto);
   }
 }

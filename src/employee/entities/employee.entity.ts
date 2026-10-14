@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -15,6 +16,10 @@ export enum EmployeePosition {
   OTHER = 'other',
 }
 
+@Index('UQ_EMPLOYEES_userId', ['userId'], {
+  unique: true,
+  where: '"userId" IS NOT NULL',
+})
 @Entity('EMPLOYEES')
 export class Employee {
   @PrimaryGeneratedColumn('uuid')
@@ -48,6 +53,11 @@ export class Employee {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  // Usuario con el que el empleado entra a la app (por ejemplo, un
+  // repartidor). null si no tiene acceso.
+  @Column({ type: 'uuid', nullable: true })
+  userId?: string | null;
 
   @CreateDateColumn()
   createdAt: Date;
