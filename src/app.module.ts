@@ -33,6 +33,7 @@ import { ReportIndexes1791905444000 } from './migrations/1791905444000-ReportInd
 import { WhatsAppConnection1791937082000 } from './migrations/1791937082000-WhatsAppConnection.js';
 import { OrderNotesAndDelivery1791944352000 } from './migrations/1791944352000-OrderNotesAndDelivery.js';
 import { EmployeeAccounts1791946933000 } from './migrations/1791946933000-EmployeeAccounts.js';
+import { CustomerPrices1791948255000 } from './migrations/1791948255000-CustomerPrices.js';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { EmployeeAccounts1791946933000 } from './migrations/1791946933000-Employ
           WhatsAppConnection1791937082000,
           OrderNotesAndDelivery1791944352000,
           EmployeeAccounts1791946933000,
+          CustomerPrices1791948255000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.

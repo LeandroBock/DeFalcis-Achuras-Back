@@ -27,6 +27,7 @@ import {
   toPaginated,
 } from '../common/pagination.js';
 import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
+import { specialPricesFor } from '../customers/customer-prices.js';
 
 @Injectable()
 export class WhatsAppService {
@@ -189,14 +190,24 @@ export class WhatsAppService {
 
     const customer = await this.inbox.findCustomerByPhone(data.phone);
 
+    // Si el cliente tiene precio especial para ese producto, se usa ese.
+    const specialPrices = customer
+      ? await specialPricesFor(this.dataSource.manager, customer.id, [
+          analysis.productId,
+        ])
+      : new Map<string, number>();
+    const unitPrice =
+      specialPrices.get(analysis.productId) ?? analysis.salePrice;
+    const subtotal = Number((analysis.quantity * unitPrice).toFixed(2));
+
     const whatsappOrder = this.whatsappOrdersRepository.create({
       phone: data.phone,
       customerId: customer?.id,
       productId: analysis.productId,
       quantity: analysis.quantity,
       unit: analysis.unit,
-      unitPrice: analysis.salePrice,
-      subtotal: analysis.subtotal,
+      unitPrice,
+      subtotal,
       status: WhatsAppOrderStatus.PENDING,
     });
 
@@ -208,7 +219,7 @@ export class WhatsAppService {
       confirmationMessage:
         `Encontré ${analysis.quantity} ${analysis.unit} de ` +
         `${analysis.productName}. ` +
-        `El total es $${analysis.subtotal}. ` +
+        `El total es $${subtotal}. ` +
         `¿Confirmás el pedido?`,
     };
   }

@@ -35,6 +35,7 @@ import { OrdersQueryDto } from './dto/orders-query.dto.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 
 import { findActiveProductsById } from '../products/active-products.js';
+import { priceFor, specialPricesFor } from '../customers/customer-prices.js';
 import { findMaybePaginated } from '../common/pagination.js';
 import { Payment } from '../payments/entities/payments.entity.js';
 import { User, UserRole } from '../users/entities/user.entity.js';
@@ -95,7 +96,7 @@ export class OrdersService {
       await this.findDriver(manager, assignedToId);
     }
 
-    const orderItems = await this.buildNoteItems(manager, items);
+    const orderItems = await this.buildNoteItems(manager, customerId, items);
 
     const order = await manager.getRepository(Order).save(
       manager.getRepository(Order).create({
@@ -127,7 +128,7 @@ export class OrdersService {
       let items: OrderItem[] | undefined;
 
       if (dto.items) {
-        items = await this.buildNoteItems(manager, dto.items);
+        items = await this.buildNoteItems(manager, order.customerId, dto.items);
         items.forEach((item) => (item.orderId = order.id));
 
         await manager.getRepository(OrderItem).delete({ orderId: order.id });
@@ -204,7 +205,12 @@ export class OrdersService {
         .getRepository(OrderItem)
         .findBy({ orderId: order.id });
 
-      const items = await this.buildDeliveredItems(manager, noteItems, dto);
+      const items = await this.buildDeliveredItems(
+        manager,
+        order.customerId,
+        noteItems,
+        dto,
+      );
       const total = this.sumSubtotals(items);
 
       if (!items.some((item) => Number(item.quantity) > 0)) {
@@ -453,18 +459,24 @@ export class OrdersService {
     }
   }
 
-  // Ítems de una nota: precio vigente del producto, kilos pedidos.
+  // Ítems de una nota: precio vigente para ese cliente (su precio especial si
+  // tiene, si no el normal) y kilos pedidos.
   private async buildNoteItems(
     manager: EntityManager,
+    customerId: string,
     items: { productId: string; quantity: number }[],
   ) {
-    const productsById = await findActiveProductsById(
-      manager,
-      items.map((item) => item.productId),
-    );
+    const productIds = items.map((item) => item.productId);
+    const [productsById, specialPrices] = await Promise.all([
+      findActiveProductsById(manager, productIds),
+      specialPricesFor(manager, customerId, productIds),
+    ]);
 
     return items.map((item) => {
-      const unitPrice = Number(productsById.get(item.productId)!.salePrice);
+      const unitPrice = priceFor(
+        specialPrices,
+        productsById.get(item.productId)!,
+      );
 
       return manager.getRepository(OrderItem).create({
         productId: item.productId,
@@ -478,10 +490,11 @@ export class OrdersService {
 
   // Ítems de la entrega: los productos de la nota conservan el precio de la
   // nota (aunque el producto haya aumentado); los agregados en el momento
-  // van al precio vigente. Lo que estaba en la nota y no se entregó queda
-  // registrado con 0.
+  // van al precio vigente para ese cliente. Lo que estaba en la nota y no se
+  // entregó queda registrado con 0.
   private async buildDeliveredItems(
     manager: EntityManager,
+    customerId: string,
     noteItems: OrderItem[],
     dto: DeliverOrderDto,
   ) {
@@ -499,9 +512,12 @@ export class OrdersService {
       .map((item) => item.productId)
       .filter((productId) => !note.has(productId));
 
-    const addedProducts = addedIds.length
-      ? await findActiveProductsById(manager, addedIds)
-      : new Map();
+    const [addedProducts, specialPrices] = addedIds.length
+      ? await Promise.all([
+          findActiveProductsById(manager, addedIds),
+          specialPricesFor(manager, customerId, addedIds),
+        ])
+      : [new Map(), new Map<string, number>()];
 
     const delivered = new Map(
       dto.items.map((item) => [item.productId, item.quantity]),
@@ -515,7 +531,7 @@ export class OrdersService {
         const requested = kilos(note.get(productId)?.requested ?? 0);
         const unitPrice =
           note.get(productId)?.unitPrice ??
-          Number(addedProducts.get(productId)!.salePrice);
+          priceFor(specialPrices, addedProducts.get(productId)!);
 
         return manager.getRepository(OrderItem).create({
           productId,

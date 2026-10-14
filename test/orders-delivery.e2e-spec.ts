@@ -507,6 +507,65 @@ describe('Notas de pedido, reparto y entrega', () => {
       });
     });
 
+    it('recibe todos los datos del cliente y lo que debía de antes', async () => {
+      const mine = await t.createUser(UserRole.REPARTO);
+      const customer = await t.createCustomer({
+        name: 'Restaurante El Asador',
+        phone: '3415550001',
+        email: 'compras@elasador.com',
+        address: 'Pellegrini 456',
+        notes: 'Entregar por la puerta de atrás',
+        taxId: '30712345679',
+        taxCondition: 1,
+      });
+      const product = await t.createProduct({ salePrice: 1000, stock: 50 });
+      const items = [{ productId: product.id, quantity: 3 }];
+      const deliverAs = (id: string, paid: number) =>
+        t
+          .http()
+          .post(`/orders/${id}/deliver`)
+          .set('authorization', mine.auth)
+          .send({
+            items,
+            payments: paid ? [{ amount: paid, method: 'cash' }] : [],
+          })
+          .expect(201);
+
+      // Dos entregas anteriores: una quedó debiendo $1000 y otra $3000.
+      const first = await createNote(customer.id, items, {
+        assignedToId: mine.user.id,
+      });
+      await deliverAs(first.body.order.id, 2000);
+      const second = await createNote(customer.id, items, {
+        assignedToId: mine.user.id,
+      });
+      await deliverAs(second.body.order.id, 0);
+
+      await createNote(customer.id, items, {
+        assignedToId: mine.user.id,
+      }).expect(201);
+
+      const res = await t
+        .http()
+        .get('/deliveries/mine')
+        .set('authorization', mine.auth)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].customer).toEqual({
+        id: customer.id,
+        name: 'Restaurante El Asador',
+        phone: '3415550001',
+        email: 'compras@elasador.com',
+        address: 'Pellegrini 456',
+        notes: 'Entregar por la puerta de atrás',
+        taxId: '30712345679',
+        taxCondition: 1,
+        pendingBalance: 4000,
+        specialPrices: {},
+      });
+    });
+
     it('la oficina ve la lista de repartidores para asignar', async () => {
       const res = await t
         .http()

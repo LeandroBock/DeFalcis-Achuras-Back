@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
 import { Customer } from '../customers/entities/customer.entity.js';
+import { CustomerPrice } from '../customers/entities/customer-price.entity.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { Payment } from '../payments/entities/payments.entity.js';
 import { Product } from '../products/entities/product.entity.js';
@@ -302,20 +303,66 @@ export class DeliveriesService {
     };
   }
 
+  // Saldo pendiente por cliente: entregas no cobradas del todo.
+  private async pendingBalances(customerIds: string[]) {
+    if (!customerIds.length) return new Map<string, number>();
+
+    const rows: { customerId: string; balance: string }[] =
+      await this.ordersRepository
+        .createQueryBuilder('o')
+        .leftJoin(
+          (sub) =>
+            sub
+              .select('payment.orderId', 'orderId')
+              .addSelect('SUM(payment.amount)', 'paid')
+              .from(Payment, 'payment')
+              .groupBy('payment.orderId'),
+          'pay',
+          'pay."orderId" = o.id',
+        )
+        .select('o.customerId', 'customerId')
+        .addSelect('SUM(o.total - COALESCE(pay.paid, 0))', 'balance')
+        .where('o.status = :delivered', { delivered: OrderStatus.DELIVERED })
+        .andWhere('o.customerId IN (:...customerIds)', { customerIds })
+        .andWhere('o.total - COALESCE(pay.paid, 0) > 0')
+        .groupBy('o.customerId')
+        .getRawMany();
+
+    return new Map(
+      rows.map((row) => [row.customerId, money(Number(row.balance))]),
+    );
+  }
+
   private async withDetails(orders: Order[]) {
     if (!orders.length) return [];
 
     const orderIds = orders.map((order) => order.id);
 
-    const [items, customers] = await Promise.all([
+    const customerIds = [...new Set(orders.map((o) => o.customerId))];
+
+    const [items, customers, specialPrices] = await Promise.all([
       this.orderItemsRepository.find({
         where: { orderId: In(orderIds) },
         order: { createdAt: 'ASC', id: 'ASC' },
       }),
-      this.customersRepository.find({
-        where: { id: In([...new Set(orders.map((o) => o.customerId))]) },
-      }),
+      this.customersRepository.find({ where: { id: In(customerIds) } }),
+      this.ordersRepository.manager
+        .getRepository(CustomerPrice)
+        .find({ where: { customerId: In(customerIds) } }),
     ]);
+
+    // Lo que cada cliente debe de entregas anteriores (cuenta corriente),
+    // para que el repartidor lo sepa al llegar.
+    const balances = await this.pendingBalances(customerIds);
+
+    // Precios especiales por cliente: el repartidor los necesita si agrega
+    // productos en el momento de la entrega.
+    const pricesByCustomer = new Map<string, Record<string, number>>();
+    for (const price of specialPrices) {
+      const prices = pricesByCustomer.get(price.customerId) ?? {};
+      prices[price.productId] = Number(price.price);
+      pricesByCustomer.set(price.customerId, prices);
+    }
 
     const products = items.length
       ? await this.productsRepository.find({
@@ -339,12 +386,19 @@ export class DeliveriesService {
         deliveredAt: order.deliveredAt ?? null,
         deliveryComment: order.deliveryComment ?? null,
         createdAt: order.createdAt,
+        // Todos los datos del cliente que sirven en el domicilio.
         customer: customer
           ? {
               id: customer.id,
               name: customer.name,
               phone: customer.phone ?? null,
+              email: customer.email ?? null,
               address: customer.address ?? null,
+              notes: customer.notes ?? null,
+              taxId: customer.taxId ?? null,
+              taxCondition: customer.taxCondition,
+              pendingBalance: balances.get(customer.id) ?? 0,
+              specialPrices: pricesByCustomer.get(customer.id) ?? {},
             }
           : null,
         items: items

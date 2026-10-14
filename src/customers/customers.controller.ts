@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 
@@ -16,6 +18,8 @@ import { CustomersService } from './customers.service.js';
 import { CreateCustomerDto } from './dto/create-customer.dto.js';
 
 import { UpdateCustomerDto } from './dto/update-customer.dto.js';
+
+import { SetCustomerPriceDto } from './dto/set-customer-price.dto.js';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 
@@ -30,6 +34,32 @@ import { UserRole } from '../users/entities/user.entity.js';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
+
+  // Precios especiales del cliente (montos fijos por producto).
+  @Get(':id/prices')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
+  findPrices(@Param('id', ParseUUIDPipe) id: string) {
+    return this.customersService.findPrices(id);
+  }
+
+  @Put(':id/prices/:productId')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  setPrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() dto: SetCustomerPriceDto,
+  ) {
+    return this.customersService.setPrice(id, productId, dto.price);
+  }
+
+  @Delete(':id/prices/:productId')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  removePrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('productId', ParseUUIDPipe) productId: string,
+  ) {
+    return this.customersService.removePrice(id, productId);
+  }
 
   @Get()
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
