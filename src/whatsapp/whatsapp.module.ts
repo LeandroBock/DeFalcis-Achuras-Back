@@ -20,6 +20,7 @@ import {
 import { WhatsAppAuth } from './entities/whatsapp-auth.entity.js';
 import { WhatsAppEventsService } from './whatsapp-events.service.js';
 import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
+import { DeliveryNotifierService } from './delivery-notifier.service.js';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
     WhatsAppService,
     WhatsAppInboxService,
     WhatsAppEventsService,
+    DeliveryNotifierService,
     {
       // La conexión real solo se activa con WHATSAPP_ENABLED=true (en Render).
       // En local quedaría usando la misma sesión que producción.

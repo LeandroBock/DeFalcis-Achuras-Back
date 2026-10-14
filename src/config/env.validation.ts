@@ -60,6 +60,19 @@ export function validateEnv(config: Record<string, unknown>) {
     errors.push('WHATSAPP_ENABLED debe ser true o false');
   }
 
+  const notifyPhones = config.DELIVERY_NOTIFY_PHONES;
+  if (
+    typeof notifyPhones === 'string' &&
+    notifyPhones.trim() &&
+    notifyPhones
+      .split(',')
+      .some((phone) => !/^\+?[\d\s()-]{8,20}$/.test(phone.trim()))
+  ) {
+    errors.push(
+      'DELIVERY_NOTIFY_PHONES debe ser una lista de teléfonos separados por coma',
+    );
+  }
+
   errors.push(...validateArca(config));
 
   if (errors.length > 0) {

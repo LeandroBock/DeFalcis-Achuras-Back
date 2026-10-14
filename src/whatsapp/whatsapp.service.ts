@@ -214,7 +214,7 @@ export class WhatsAppService {
   }
 
   async confirmOrder(id: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const whatsappOrderRepository = manager.getRepository(WhatsAppOrder);
 
       // Bloquea el pedido de WhatsApp: si se confirma dos veces a la vez, la
@@ -263,6 +263,10 @@ export class WhatsAppService {
         items: result.items,
       };
     });
+
+    await this.ordersService.notify('order.created', result.order.id);
+
+    return result;
   }
 
   async findAll(query: PaginationQueryDto) {

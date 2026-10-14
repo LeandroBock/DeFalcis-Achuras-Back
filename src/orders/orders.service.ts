@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -38,6 +39,7 @@ import { findMaybePaginated } from '../common/pagination.js';
 import { Payment } from '../payments/entities/payments.entity.js';
 import { User, UserRole } from '../users/entities/user.entity.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
+import { OrderEvent, RealtimeService } from '../realtime/realtime.service.js';
 
 const money = (value: number) => Number(value.toFixed(2));
 const kilos = (value: number) => Number(value.toFixed(3));
@@ -51,6 +53,8 @@ const kilos = (value: number) => Number(value.toFixed(3));
 //    descuenta el stock con los kilos reales y queda registrada la venta.
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)
     private readonly ordersRepository: Repository<Order>,
@@ -61,17 +65,24 @@ export class OrdersService {
     private readonly inventoryService: InventoryService,
 
     private readonly dataSource: DataSource,
+
+    private readonly realtime: RealtimeService,
   ) {}
 
   // Si se pasa un manager, la nota se crea dentro de esa transacción.
   async create(createOrderDto: CreateOrderDto, manager?: EntityManager) {
     if (manager) {
+      // Transacción ajena (por ejemplo, WhatsApp): avisa quien la confirma.
       return this.createInTransaction(createOrderDto, manager);
     }
 
-    return this.dataSource.transaction((txManager) =>
+    const result = await this.dataSource.transaction((txManager) =>
       this.createInTransaction(createOrderDto, txManager),
     );
+
+    await this.notify('order.created', result.order.id);
+
+    return result;
   }
 
   private async createInTransaction(
@@ -107,7 +118,7 @@ export class OrdersService {
   }
 
   async update(id: string, dto: UpdateOrderDto) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const order = await this.lockPendingOrder(manager, id);
 
       if (dto.notes !== undefined) order.notes = dto.notes;
@@ -136,10 +147,14 @@ export class OrdersService {
             .findBy({ orderId: order.id })),
       };
     });
+
+    await this.notify('order.updated', id);
+
+    return result;
   }
 
   async assign(id: string, { assignedToId, deliveryDate }: AssignOrderDto) {
-    return this.dataSource.transaction(async (manager) => {
+    const order = await this.dataSource.transaction(async (manager) => {
       const order = await this.lockPendingOrder(manager, id);
 
       if (assignedToId) {
@@ -151,16 +166,24 @@ export class OrdersService {
 
       return manager.getRepository(Order).save(order);
     });
+
+    await this.notify('order.assigned', id);
+
+    return order;
   }
 
   async cancel(id: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const order = await this.dataSource.transaction(async (manager) => {
       const order = await this.lockPendingOrder(manager, id);
 
       order.status = OrderStatus.CANCELLED;
 
       return manager.getRepository(Order).save(order);
     });
+
+    await this.notify('order.cancelled', id);
+
+    return order;
   }
 
   // El repartidor carga lo que se pesó, entregó y cobró en el domicilio.
@@ -173,7 +196,7 @@ export class OrdersService {
       );
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const order = await this.lockPendingOrder(manager, id);
       this.assertCanDeliver(order, user);
 
@@ -256,12 +279,28 @@ export class OrdersService {
         pending: money(total - collected),
       };
     });
+
+    // La venta quedó registrada: avisar a la oficina en el momento.
+    const collectedByMethod: Record<string, number> = {};
+    for (const payment of result.payments) {
+      collectedByMethod[payment.method] = money(
+        (collectedByMethod[payment.method] ?? 0) + Number(payment.amount),
+      );
+    }
+
+    await this.notify('order.delivered', id, {
+      collected: result.collected,
+      pending: result.pending,
+      collectedByMethod,
+    });
+
+    return result;
   }
 
   // El cliente no recibió el pedido: la nota vuelve a la oficina (sin
   // repartidor) con el motivo, para reprogramarla o anularla.
   async markNotDelivered(id: string, reason: string, user: AuthUser) {
-    return this.dataSource.transaction(async (manager) => {
+    const order = await this.dataSource.transaction(async (manager) => {
       const order = await this.lockPendingOrder(manager, id);
       this.assertCanDeliver(order, user);
 
@@ -270,6 +309,13 @@ export class OrdersService {
 
       return manager.getRepository(Order).save(order);
     });
+
+    await this.notify('order.not_delivered', id, {
+      reason,
+      driverName: await this.userName(user.sub),
+    });
+
+    return order;
   }
 
   async findAll(query: OrdersQueryDto) {
@@ -305,6 +351,50 @@ export class OrdersService {
       order,
       items,
     };
+  }
+
+  // Avisa a la oficina (y al aviso por WhatsApp) con un resumen de la nota.
+  // Nunca hace fallar la operación: ya quedó guardada.
+  async notify(
+    type: OrderEvent['type'],
+    orderId: string,
+    extra: Partial<OrderEvent['data']> = {},
+  ) {
+    try {
+      const order = await this.ordersRepository.findOneByOrFail({
+        id: orderId,
+      });
+      const customer = await this.dataSource
+        .getRepository(Customer)
+        .findOneBy({ id: order.customerId });
+
+      this.realtime.emit({
+        type,
+        data: {
+          orderId,
+          customerName: customer?.name ?? 'Cliente',
+          driverName: await this.userName(
+            order.deliveredById ?? order.assignedToId,
+          ),
+          total: Number(order.total),
+          ...extra,
+        },
+      } as OrderEvent);
+    } catch (error) {
+      this.logger.error(
+        `No se pudo avisar ${type} de ${orderId}: ${String(error)}`,
+      );
+    }
+  }
+
+  private async userName(userId?: string | null) {
+    if (!userId) return null;
+
+    const user = await this.dataSource
+      .getRepository(User)
+      .findOne({ select: { id: true, name: true }, where: { id: userId } });
+
+    return user?.name ?? null;
   }
 
   // ---------- Auxiliares ----------

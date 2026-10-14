@@ -115,4 +115,16 @@ describe('validateEnv', () => {
       'WHATSAPP_ENABLED',
     );
   });
+
+  it('DELIVERY_NOTIFY_PHONES acepta una lista de teléfonos', () => {
+    expect(() =>
+      validateEnv({
+        ...valid,
+        DELIVERY_NOTIFY_PHONES: '3415556789, +54 9 341 555-1111',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateEnv({ ...valid, DELIVERY_NOTIFY_PHONES: 'juan@mail.com' }),
+    ).toThrow('DELIVERY_NOTIFY_PHONES');
+  });
 });

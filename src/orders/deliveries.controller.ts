@@ -47,6 +47,24 @@ export class DeliveriesController {
     return this.deliveriesService.pendingFor(user.sub, date);
   }
 
+  // Tablero del día (por defecto, hoy) para seguir el reparto en vivo.
+  @Get('board')
+  @Roles(
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.VENTAS,
+    UserRole.FINANZAS,
+  )
+  board(@Query('date') date?: string) {
+    if (date !== undefined && !isDateString(date, { strict: true })) {
+      throw new BadRequestException(
+        'La fecha debe tener el formato AAAA-MM-DD',
+      );
+    }
+
+    return this.deliveriesService.board(date ?? todayInBusinessTimezone());
+  }
+
   // Rendición de un repartidor en un día (por defecto, hoy). Un repartidor
   // solo puede ver la suya.
   @Get('settlement')

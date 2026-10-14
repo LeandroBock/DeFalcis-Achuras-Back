@@ -82,6 +82,95 @@ export class DeliveriesService {
     return this.withDetails(orders);
   }
 
+  // Tablero del día para la oficina: las notas a entregar ese día y las
+  // entregadas ese día, con su estado y repartidor.
+  async board(date: string) {
+    const { start, end } = businessDayRange(date);
+
+    const orders = await this.ordersRepository
+      .createQueryBuilder('o')
+      .where('(o.status = :pending AND o.deliveryDate = :date)', {
+        pending: OrderStatus.PENDING,
+        date,
+      })
+      .orWhere(
+        '(o.status = :delivered AND o.deliveredAt >= :start AND o.deliveredAt < :end)',
+        { delivered: OrderStatus.DELIVERED, start, end },
+      )
+      .orderBy('o.createdAt', 'ASC')
+      .getMany();
+
+    const detailed = await this.withDetails(orders);
+
+    const userIds = [
+      ...new Set(
+        orders
+          .map((order) => order.deliveredById ?? order.assignedToId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const [users, payments] = await Promise.all([
+      userIds.length
+        ? this.usersRepository.find({
+            select: { id: true, name: true },
+            where: { id: In(userIds) },
+          })
+        : [],
+      orders.length
+        ? this.paymentsRepository.find({
+            where: { orderId: In(orders.map((order) => order.id)) },
+          })
+        : [],
+    ]);
+
+    const userName = new Map(users.map((user) => [user.id, user.name]));
+    const collected = new Map<string, number>();
+    for (const payment of payments) {
+      collected.set(
+        payment.orderId,
+        (collected.get(payment.orderId) ?? 0) + Number(payment.amount),
+      );
+    }
+
+    const notes = detailed.map((order, index) => {
+      const source = orders[index];
+      const driverId = source.deliveredById ?? source.assignedToId ?? null;
+      const boardStatus =
+        source.status === OrderStatus.DELIVERED
+          ? 'delivered'
+          : source.deliveryComment && !source.assignedToId
+            ? 'not_delivered'
+            : 'pending';
+
+      return {
+        ...order,
+        boardStatus,
+        driverId,
+        driverName: driverId ? (userName.get(driverId) ?? null) : null,
+        collected: money(collected.get(order.id) ?? 0),
+      };
+    });
+
+    const delivered = notes.filter((note) => note.boardStatus === 'delivered');
+
+    return {
+      date,
+      summary: {
+        total: notes.length,
+        pending: notes.filter((note) => note.boardStatus === 'pending').length,
+        delivered: delivered.length,
+        notDelivered: notes.filter(
+          (note) => note.boardStatus === 'not_delivered',
+        ).length,
+        sold: money(delivered.reduce((sum, note) => sum + note.total, 0)),
+        collected: money(
+          delivered.reduce((sum, note) => sum + note.collected, 0),
+        ),
+      },
+      notes,
+    };
+  }
+
   // Rendición de un repartidor en un día: qué entregó (kilos reales) y cuánto
   // cobró por cada método, para controlar lo que trae a la empresa.
   async settlement(userId: string, date: string) {

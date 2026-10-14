@@ -23,6 +23,7 @@ import { SupplierPaymentsModule } from './supplier-payments/supplier-payments.mo
 import { ReportsModule } from './reports/reports.module.js';
 import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 import { InvoicingModule } from './invoicing/invoicing.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { arcaConfig } from './config/arca.config.js';
 import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
@@ -112,6 +113,8 @@ import { OrderNotesAndDelivery1791944352000 } from './migrations/1791944352000-O
     WhatsAppModule,
 
     InvoicingModule,
+
+    RealtimeModule,
   ],
 
   providers: [
