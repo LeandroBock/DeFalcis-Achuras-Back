@@ -26,6 +26,12 @@ export enum WhatsAppMessageStatus {
 }
 
 @Index('IDX_WHATSAPP_MESSAGES_phone', ['phone'])
+// Evita guardar dos veces el mismo mensaje (WhatsApp reenvía eventos y los
+// mensajes enviados desde la app vuelven como eco).
+@Index('UQ_WHATSAPP_MESSAGES_externalMessageId', ['externalMessageId'], {
+  unique: true,
+  where: '"externalMessageId" IS NOT NULL',
+})
 @Entity('WHATSAPP_MESSAGES')
 export class WhatsAppMessage {
   @PrimaryGeneratedColumn('uuid')
@@ -52,6 +58,11 @@ export class WhatsAppMessage {
 
   @Column({ type: 'uuid', nullable: true })
   customerId?: string;
+
+  // Nombre con el que el contacto figura en WhatsApp (sirve para identificar
+  // números que todavía no están cargados como clientes).
+  @Column({ length: 100, nullable: true })
+  contactName?: string;
 
   @Column({ length: 150, nullable: true })
   externalMessageId?: string;

@@ -5,32 +5,25 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource } from 'typeorm';
 
 import { User } from '../../users/entities/user.entity.js';
+import { ALLOW_QUERY_TOKEN_KEY } from '../decorators/allow-query-token.decorator.js';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly dataSource: DataSource,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    const authorization = request.headers.authorization;
-
-    if (!authorization) {
-      throw new UnauthorizedException('Token no proporcionado');
-    }
-
-    const [type, token] = authorization.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw new UnauthorizedException('Formato de token inválido');
-    }
+    const token = this.extractToken(context, request);
 
     let payload: { sub: string; email: string; role: string };
 
@@ -54,5 +47,37 @@ export class JwtAuthGuard implements CanActivate {
     request.user = { ...payload, email: user.email, role: user.role };
 
     return true;
+  }
+
+  private extractToken(
+    context: ExecutionContext,
+    request: {
+      headers: { authorization?: string };
+      query?: { access_token?: unknown };
+    },
+  ) {
+    const authorization = request.headers.authorization;
+
+    if (authorization) {
+      const [type, token] = authorization.split(' ');
+
+      if (type !== 'Bearer' || !token) {
+        throw new UnauthorizedException('Formato de token inválido');
+      }
+
+      return token;
+    }
+
+    const allowQueryToken = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_QUERY_TOKEN_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const queryToken = request.query?.access_token;
+
+    if (allowQueryToken && typeof queryToken === 'string' && queryToken) {
+      return queryToken;
+    }
+
+    throw new UnauthorizedException('Token no proporcionado');
   }
 }

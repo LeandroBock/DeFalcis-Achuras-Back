@@ -6,7 +6,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Product, ProductUnit } from '../products/entities/product.entity.js';
-import { Customer } from '../customers/entities/customer.entity.js';
 import { OrdersService } from '../orders/orders.service.js';
 import {
   WhatsAppMessage,
@@ -27,15 +26,13 @@ import {
   pageAndLimit,
   toPaginated,
 } from '../common/pagination.js';
+import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
 
 @Injectable()
 export class WhatsAppService {
   constructor(
     @InjectRepository(WhatsAppMessage)
     private readonly messagesRepository: Repository<WhatsAppMessage>,
-
-    @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
 
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
@@ -48,6 +45,7 @@ export class WhatsAppService {
     private readonly ordersService: OrdersService,
     private readonly paymentsService: PaymentsService,
     private readonly dataSource: DataSource,
+    private readonly inbox: WhatsAppInboxService,
   ) {}
 
   async createIncomingMessage(data: {
@@ -56,20 +54,9 @@ export class WhatsAppService {
     customerId?: string;
     externalMessageId?: string;
   }) {
-    let customerId = data.customerId;
-
     // Si no recibimos customerId, buscamos al cliente por teléfono
-    if (!customerId) {
-      const customer = await this.customersRepository.findOne({
-        where: {
-          phone: data.phone,
-        },
-      });
-
-      if (customer) {
-        customerId = customer.id;
-      }
-    }
+    const customerId =
+      data.customerId ?? (await this.inbox.findCustomerByPhone(data.phone))?.id;
 
     const whatsappMessage = this.messagesRepository.create({
       phone: data.phone,
@@ -90,20 +77,9 @@ export class WhatsAppService {
     customerId?: string;
     externalMessageId?: string;
   }) {
-    let customerId = data.customerId;
-
     // Si no recibimos customerId, buscamos al cliente por teléfono
-    if (!customerId) {
-      const customer = await this.customersRepository.findOne({
-        where: {
-          phone: data.phone,
-        },
-      });
-
-      if (customer) {
-        customerId = customer.id;
-      }
-    }
+    const customerId =
+      data.customerId ?? (await this.inbox.findCustomerByPhone(data.phone))?.id;
 
     const whatsappMessage = this.messagesRepository.create({
       phone: data.phone,
@@ -211,11 +187,7 @@ export class WhatsAppService {
       return analysis;
     }
 
-    const customer = await this.customersRepository.findOne({
-      where: {
-        phone: data.phone,
-      },
-    });
+    const customer = await this.inbox.findCustomerByPhone(data.phone);
 
     const whatsappOrder = this.whatsappOrdersRepository.create({
       phone: data.phone,
@@ -511,8 +483,8 @@ export class WhatsAppService {
     };
   }
   // Último mensaje de cada teléfono, del más reciente al más antiguo, con el
-  // cliente asociado (si varios comparten teléfono: el activo más antiguo).
-  // Se resuelve en una sola consulta.
+  // cliente asociado aunque su teléfono esté escrito en otro formato (si varios
+  // coinciden: el activo más antiguo).
   async getConversations(query: PaginationQueryDto) {
     const paginated = isPaginated(query);
     const { limit, skip } = pageAndLimit(query);
@@ -520,35 +492,42 @@ export class WhatsAppService {
     const rows: {
       phone: string;
       message: string;
+      direction: string;
       createdAt: Date;
-      customerId: string | null;
-      customerName: string | null;
+      contactName: string | null;
     }[] = await this.messagesRepository.query(
       `
-      SELECT last.phone, last.message, last."createdAt",
-             customer.id AS "customerId", customer.name AS "customerName"
+      SELECT last.phone, last.message, last.direction, last."createdAt",
+             contact."contactName"
       FROM (
-        SELECT DISTINCT ON (phone) phone, message, "createdAt"
+        SELECT DISTINCT ON (phone) phone, message, direction, "createdAt"
         FROM "WHATSAPP_MESSAGES"
         ORDER BY phone, "createdAt" DESC
       ) last
       LEFT JOIN LATERAL (
-        SELECT id, name FROM "CUSTOMERS" c
-        WHERE c.phone = last.phone
-        ORDER BY c."isActive" DESC, c."createdAt"
+        SELECT m."contactName" FROM "WHATSAPP_MESSAGES" m
+        WHERE m.phone = last.phone AND m."contactName" IS NOT NULL
+        ORDER BY m."createdAt" DESC
         LIMIT 1
-      ) customer ON true
+      ) contact ON true
       ORDER BY last."createdAt" DESC, last.phone
       ${paginated ? 'LIMIT $1 OFFSET $2' : ''}
       `,
       paginated ? [limit, skip] : [],
     );
 
+    const customers = await this.inbox.findCustomersByPhones(
+      rows.map((row) => row.phone),
+    );
+
     const conversations = rows.map((row) => ({
       phone: row.phone,
-      customerId: row.customerId ?? null,
-      customerName: row.customerName ?? 'Cliente desconocido',
+      customerId: customers.get(row.phone)?.id ?? null,
+      customerName: customers.get(row.phone)?.name ?? 'Cliente desconocido',
+      // Nombre que el contacto tiene en WhatsApp (útil si no es cliente).
+      contactName: row.contactName ?? null,
       lastMessage: row.message ?? '',
+      lastMessageDirection: row.direction,
       lastMessageDate: row.createdAt ?? null,
     }));
 

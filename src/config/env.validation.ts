@@ -50,6 +50,16 @@ export function validateEnv(config: Record<string, unknown>) {
     );
   }
 
+  const whatsappEnabled = config.WHATSAPP_ENABLED;
+  if (
+    whatsappEnabled !== undefined &&
+    whatsappEnabled !== '' &&
+    whatsappEnabled !== 'true' &&
+    whatsappEnabled !== 'false'
+  ) {
+    errors.push('WHATSAPP_ENABLED debe ser true o false');
+  }
+
   errors.push(...validateArca(config));
 
   if (errors.length > 0) {

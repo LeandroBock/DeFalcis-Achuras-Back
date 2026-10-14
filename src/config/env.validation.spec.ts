@@ -106,4 +106,13 @@ describe('validateEnv', () => {
       ).toThrow('No existe el archivo de ARCA_CERT_PATH');
     });
   });
+
+  it('WHATSAPP_ENABLED solo acepta true o false', () => {
+    expect(() =>
+      validateEnv({ ...valid, WHATSAPP_ENABLED: 'true' }),
+    ).not.toThrow();
+    expect(() => validateEnv({ ...valid, WHATSAPP_ENABLED: 'si' })).toThrow(
+      'WHATSAPP_ENABLED',
+    );
+  });
 });

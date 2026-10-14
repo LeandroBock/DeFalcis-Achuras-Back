@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
@@ -31,7 +31,11 @@ export type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
 // Levanta la app completa (módulos, guards, pipes y migraciones) contra una
 // base nueva copiada de la plantilla.
-export async function createTestApp(env: Record<string, string> = {}) {
+export async function createTestApp(
+  env: Record<string, string> = {},
+  // Para reemplazar providers (por ejemplo, el cliente de WhatsApp).
+  configure: (builder: TestingModuleBuilder) => TestingModuleBuilder = (b) => b,
+) {
   const database = `${TEST_DB_PREFIX}${randomUUID().slice(0, 8)}`;
   const db = testDbConfig();
 
@@ -52,14 +56,16 @@ export async function createTestApp(env: Record<string, string> = {}) {
     JWT_SECRET: 'test-secret-de-al-menos-32-caracteres!!',
     SEED_ADMIN_EMAIL: '',
     SEED_ADMIN_PASSWORD: '',
+    // Nunca conectarse a un WhatsApp real desde los tests.
+    WHATSAPP_ENABLED: 'false',
     ...env,
   });
 
   const { AppModule } = await import('../../src/app.module.js');
 
-  const moduleRef = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+  const moduleRef = await configure(
+    Test.createTestingModule({ imports: [AppModule] }),
+  ).compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app);

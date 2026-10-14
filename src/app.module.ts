@@ -29,6 +29,7 @@ import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
 import { InitialSchema1791900000000 } from './migrations/1791900000000-InitialSchema.js';
 import { SupplierCredit1791904569000 } from './migrations/1791904569000-SupplierCredit.js';
 import { ReportIndexes1791905444000 } from './migrations/1791905444000-ReportIndexes.js';
+import { WhatsAppConnection1791937082000 } from './migrations/1791937082000-WhatsAppConnection.js';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { ReportIndexes1791905444000 } from './migrations/1791905444000-ReportInd
           InitialSchema1791900000000,
           SupplierCredit1791904569000,
           ReportIndexes1791905444000,
+          WhatsAppConnection1791937082000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.
