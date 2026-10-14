@@ -9,6 +9,7 @@ import { DataSource, In, Repository } from 'typeorm';
 
 import { User } from '../users/entities/user.entity.js';
 import { BCRYPT_ROUNDS } from '../users/users.service.js';
+import { revokeUserSessions } from '../auth/sessions.js';
 
 import { Employee } from './entities/employee.entity.js';
 import { CreateEmployeeDto } from './dto/create-employee.dto.js';
@@ -95,6 +96,7 @@ export class EmployeesService {
         await manager
           .getRepository(User)
           .update(employee.userId, { isActive: false });
+        await revokeUserSessions(manager, employee.userId);
       }
     });
 
@@ -153,7 +155,15 @@ export class EmployeesService {
     }
 
     if (Object.keys(changes).length) {
-      await this.usersRepository.update(employee.userId, changes);
+      await this.dataSource.transaction(async (manager) => {
+        await manager.getRepository(User).update(employee.userId!, changes);
+
+        // Nueva contraseña o acceso bloqueado: se cierran sus sesiones
+        // abiertas (por ejemplo, la de un celular perdido).
+        if (dto.password !== undefined || dto.isActive === false) {
+          await revokeUserSessions(manager, employee.userId!);
+        }
+      });
     }
 
     return this.toAccount(

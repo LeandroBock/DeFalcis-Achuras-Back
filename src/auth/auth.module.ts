@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { UsersModule } from '../users/users.module.js';
 
@@ -9,12 +10,15 @@ import { AuthService } from './auth.service.js';
 
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RolesGuard } from './guards/roles.guard.js';
+import { UserSession } from './entities/user-session.entity.js';
 
 @Module({
   imports: [
     UsersModule,
 
     ConfigModule,
+
+    TypeOrmModule.forFeature([UserSession]),
 
     // Única configuración de JWT de la app (global): no registrar JwtModule
     // en otros módulos.

@@ -188,12 +188,13 @@ describe('Empleados y su acceso a la app', () => {
       .expect(401);
     await login('bloqueado@test.com', 'Reparto1234').expect(401);
 
+    // Desbloquearlo no revive la sesión anterior: tiene que volver a entrar.
     await updateAccess(employeeId, { isActive: true }).expect(200);
     await t
       .http()
       .get('/deliveries/mine')
       .set('authorization', auth)
-      .expect(200);
+      .expect(401);
   });
 
   it('dar de baja al empleado le quita el acceso', async () => {

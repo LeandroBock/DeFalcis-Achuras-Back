@@ -16,6 +16,7 @@ import {
 } from '../../src/products/entities/product.entity.js';
 import { Supplier } from '../../src/suppliers/entities/supplier.entity.js';
 import { User, UserRole } from '../../src/users/entities/user.entity.js';
+import { UserSession } from '../../src/auth/entities/user-session.entity.js';
 
 import {
   TEMPLATE_DB,
@@ -109,13 +110,22 @@ function createFixtures(dataSource: DataSource, jwtService: JwtService) {
         }),
       );
 
+      const sessions = dataSource.getRepository(UserSession);
+      const session = await sessions.save(
+        sessions.create({
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+        }),
+      );
+
       const token = await jwtService.signAsync({
         sub: user.id,
         email: user.email,
         role: user.role,
+        sid: session.id,
       });
 
-      return { user, token, auth: `Bearer ${token}` };
+      return { user, token, session, auth: `Bearer ${token}` };
     },
 
     async createProduct(overrides: Partial<Product> = {}) {

@@ -127,4 +127,14 @@ describe('validateEnv', () => {
       validateEnv({ ...valid, DELIVERY_NOTIFY_PHONES: 'juan@mail.com' }),
     ).toThrow('DELIVERY_NOTIFY_PHONES');
   });
+
+  it('SESSION_HOURS acepta horas entre 1 y 168', () => {
+    expect(() => validateEnv({ ...valid, SESSION_HOURS: '8' })).not.toThrow();
+    expect(() => validateEnv({ ...valid, SESSION_HOURS: '0' })).toThrow(
+      'SESSION_HOURS',
+    );
+    expect(() => validateEnv({ ...valid, SESSION_HOURS: 'ocho' })).toThrow(
+      'SESSION_HOURS',
+    );
+  });
 });

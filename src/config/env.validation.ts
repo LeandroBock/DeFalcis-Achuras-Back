@@ -60,6 +60,15 @@ export function validateEnv(config: Record<string, unknown>) {
     errors.push('WHATSAPP_ENABLED debe ser true o false');
   }
 
+  const sessionHoursValue = config.SESSION_HOURS;
+  if (
+    sessionHoursValue !== undefined &&
+    sessionHoursValue !== '' &&
+    !(Number(sessionHoursValue) > 0 && Number(sessionHoursValue) <= 168)
+  ) {
+    errors.push('SESSION_HOURS debe ser una cantidad de horas entre 1 y 168');
+  }
+
   const notifyPhones = config.DELIVERY_NOTIFY_PHONES;
   if (
     typeof notifyPhones === 'string' &&
