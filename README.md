@@ -60,6 +60,32 @@ $ npm run test:cov
 
 Los tests de integración crean una base descartable por archivo (`dfachuras_test_*`) y la borran al terminar. Por defecto usan el Postgres de `docker-compose.test.yml` (puerto 5433); para usar otro, definí `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_USER` y `TEST_DB_PASSWORD`. Por seguridad, se niegan a correr contra un servidor que no sea local.
 
+## Envío de facturas por mail (API de Gmail)
+
+Las facturas se mandan desde el Gmail de la empresa con la API de Gmail
+(funciona en el plan gratuito de Render, que bloquea el SMTP). Se configura
+una sola vez:
+
+1. Entrá a [Google Cloud Console](https://console.cloud.google.com/) con el
+   Gmail de la empresa y creá un proyecto (por ejemplo "DF Achuras").
+2. **APIs y servicios → Biblioteca**: buscá **Gmail API** y habilitala.
+3. **Pantalla de consentimiento de OAuth** (Google Auth Platform): tipo
+   **Externo**, nombre de la app y mail de soporte. Después tocá **Publicar
+   app** para pasarla a *En producción*: en modo *Prueba* la autorización
+   vence a los 7 días.
+4. **Clientes → Crear cliente OAuth**, tipo **App de escritorio**. Copiá el
+   *Client ID* y el *Client Secret*.
+5. En esta carpeta: `npm run gmail:authorize`. Pide el Gmail, el Client ID y
+   el Secret, y abre el navegador. Google avisa "Google no verificó esta app"
+   (es tu propia app): **Configuración avanzada → Ir a ...**. Aceptá el
+   permiso de enviar mails; llega un mail de prueba a la casilla.
+6. Cargá en Render las cuatro variables que muestra el script:
+   `GMAIL_USER`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` y
+   `GMAIL_REFRESH_TOKEN`.
+
+Si alguna vez se cambia la contraseña de la cuenta o se quita el acceso, el
+envío falla con un aviso: se vuelve a correr el paso 5.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

@@ -36,12 +36,13 @@ export class MailService {
   async send(message: MailMessage) {
     if (!this.transport) {
       throw new Error(
-        'El correo no está configurado (faltan SMTP_USER y SMTP_PASS)',
+        'El correo no está configurado (faltan las variables GMAIL_*)',
       );
     }
 
     const name = (this.arca.business.name || 'Facturación').replace(/"/g, '');
-    const from = this.mail.from || `"${name}" <${this.mail.user}>`;
+    const from =
+      this.mail.from || `"${name}" <${this.mail.gmail.user || this.mail.user}>`;
 
     await this.transport.sendMail({ ...message, from });
     this.logger.log(`Mail enviado a ${message.to}: ${message.subject}`);

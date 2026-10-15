@@ -139,6 +139,19 @@ function validateMail(config: Record<string, unknown>) {
     return typeof raw === 'string' ? raw.trim() : '';
   };
 
+  const gmailVars = [
+    'GMAIL_USER',
+    'GMAIL_CLIENT_ID',
+    'GMAIL_CLIENT_SECRET',
+    'GMAIL_REFRESH_TOKEN',
+  ];
+  const gmailSet = gmailVars.filter((key) => value(key));
+  if (gmailSet.length > 0 && gmailSet.length < gmailVars.length) {
+    errors.push(
+      `Para mandar mails con Gmail faltan: ${gmailVars.filter((key) => !value(key)).join(', ')}`,
+    );
+  }
+
   if (!!value('SMTP_USER') !== !!value('SMTP_PASS')) {
     errors.push('SMTP_USER y SMTP_PASS van juntas: definí las dos o ninguna');
   }

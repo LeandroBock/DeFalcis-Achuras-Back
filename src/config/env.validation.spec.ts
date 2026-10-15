@@ -137,4 +137,17 @@ describe('validateEnv', () => {
       'SESSION_HOURS',
     );
   });
+
+  it('las variables de Gmail van todas juntas', () => {
+    const gmail = {
+      GMAIL_USER: 'dfachuras@gmail.com',
+      GMAIL_CLIENT_ID: 'id',
+      GMAIL_CLIENT_SECRET: 'secret',
+      GMAIL_REFRESH_TOKEN: 'refresh',
+    };
+    expect(() => validateEnv({ ...valid, ...gmail })).not.toThrow();
+    expect(() =>
+      validateEnv({ ...valid, ...gmail, GMAIL_REFRESH_TOKEN: '' }),
+    ).toThrow('faltan: GMAIL_REFRESH_TOKEN');
+  });
 });

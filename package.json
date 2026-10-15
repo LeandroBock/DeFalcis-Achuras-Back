@@ -20,6 +20,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "gmail:authorize": "node scripts/gmail-authorize.mjs",
     "start:keyboard": "nest build && ENV_FILE=.env.keyboard node --env-file=.env.keyboard dist/main"
   },
   "dependencies": {
