@@ -11,6 +11,8 @@ export type OrderEventData = {
   total: number;
   collected?: number;
   pending?: number;
+  // Lo cobrado de más en la entrega para pagar deuda anterior.
+  debtCollected?: number;
   collectedByMethod?: Partial<Record<PaymentMethod, number>>;
   reason?: string;
 };

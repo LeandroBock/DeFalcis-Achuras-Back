@@ -9,8 +9,16 @@ import {
 export enum PaymentMethod {
   CASH = 'cash',
   TRANSFER = 'transfer',
+  // Ya no se ofrece: queda para los cobros registrados antes.
   MERCADO_PAGO = 'mercado_pago',
 }
+
+// Formas de cobro que se pueden registrar hoy.
+export const COLLECTION_METHODS = [PaymentMethod.CASH, PaymentMethod.TRANSFER];
+
+// "Cuenta corriente" no es un cobro: lo que no se cobra queda como deuda del
+// cliente. En la entrega se elige para dejarlo explícito.
+export const CURRENT_ACCOUNT = 'current_account';
 
 @Index('IDX_PAYMENTS_orderId', ['orderId'])
 @Index('IDX_PAYMENTS_collectedById', ['collectedById'])

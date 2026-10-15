@@ -20,7 +20,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
-    "start:keyboard": "nest build && node --env-file=.env.keyboard dist/main"
+    "start:keyboard": "nest build && ENV_FILE=.env.keyboard node --env-file=.env.keyboard dist/main"
   },
   "dependencies": {
     "@afipsdk/afip.js": "^1.2.3",
@@ -38,6 +38,7 @@
     "class-validator": "^0.15.1",
     "exceljs": "^4.4.0",
     "helmet": "^8.3.0",
+    "nodemailer": "10.0.13",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",

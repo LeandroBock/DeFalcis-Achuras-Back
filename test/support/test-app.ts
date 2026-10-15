@@ -59,6 +59,8 @@ export async function createTestApp(
     SEED_ADMIN_PASSWORD: '',
     // Nunca conectarse a un WhatsApp real desde los tests.
     WHATSAPP_ENABLED: 'false',
+    // Ni leer el .env local (ARCA, correo): un archivo que no existe.
+    ENV_FILE: 'test/.env.no-existe',
     ...env,
   });
 

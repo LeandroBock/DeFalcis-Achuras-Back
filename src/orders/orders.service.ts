@@ -37,13 +37,39 @@ import { InventoryService } from '../inventory/inventory.service.js';
 import { findActiveProductsById } from '../products/active-products.js';
 import { priceFor, specialPricesFor } from '../customers/customer-prices.js';
 import { findMaybePaginated } from '../common/pagination.js';
-import { Payment } from '../payments/entities/payments.entity.js';
+import {
+  CURRENT_ACCOUNT,
+  Payment,
+} from '../payments/entities/payments.entity.js';
+import { payOpenOrders } from '../payments/open-orders.js';
+import type { PaymentLine } from '../payments/open-orders.js';
 import { User, UserRole } from '../users/entities/user.entity.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { OrderEvent, RealtimeService } from '../realtime/realtime.service.js';
 
 const money = (value: number) => Number(value.toFixed(2));
 const kilos = (value: number) => Number(value.toFixed(3));
+
+// Reparte lo cobrado en la entrega: primero paga esta nota (hasta su total) y
+// lo que sobra va a la deuda anterior del cliente.
+export function splitDeliveryPayments(lines: PaymentLine[], total: number) {
+  const forOrder: PaymentLine[] = [];
+  const forDebt: PaymentLine[] = [];
+  let remainingCents = Math.round(total * 100);
+
+  for (const line of lines) {
+    const cents = Math.round(line.amount * 100);
+    const toOrder = Math.min(cents, Math.max(remainingCents, 0));
+    remainingCents -= toOrder;
+
+    if (toOrder > 0) forOrder.push({ ...line, amount: toOrder / 100 });
+    if (cents > toOrder) {
+      forDebt.push({ ...line, amount: (cents - toOrder) / 100 });
+    }
+  }
+
+  return { forOrder, forDebt };
+}
 
 // Circuito de venta:
 // 1. Nota de pedido (PENDING): productos y kilos pedidos, total estimado. No
@@ -219,16 +245,18 @@ export class OrdersService {
         );
       }
 
-      const payments = dto.payments ?? [];
-      const collected = money(
-        payments.reduce((sum, payment) => sum + payment.amount, 0),
+      // "Cuenta corriente" no es un cobro: lo que no se cobra queda como
+      // deuda. Lo cobrado de más paga la deuda anterior del cliente.
+      const { forOrder, forDebt } = splitDeliveryPayments(
+        (dto.payments ?? []).filter(
+          (payment): payment is PaymentLine =>
+            payment.method !== CURRENT_ACCOUNT,
+        ),
+        total,
       );
-
-      if (collected > total) {
-        throw new BadRequestException(
-          `Lo cobrado ($${collected.toFixed(2)}) supera el total de la entrega ($${total.toFixed(2)})`,
-        );
-      }
+      const collected = money(
+        forOrder.reduce((sum, payment) => sum + payment.amount, 0),
+      );
 
       // Reemplazar los ítems de la nota por los entregados.
       items.forEach((item) => (item.orderId = order.id));
@@ -250,9 +278,24 @@ export class OrdersService {
         );
       }
 
+      // Antes de marcar esta nota como entregada: así no cuenta como deuda.
+      const debt = forDebt.length
+        ? await payOpenOrders(manager, order.customerId, forDebt, {
+            collectedById: user.sub,
+            notes: 'Deuda cobrada en la entrega',
+          }).catch((error: unknown) => {
+            if (error instanceof BadRequestException) {
+              throw new BadRequestException(
+                'Lo cobrado supera el total de la entrega más la deuda anterior del cliente',
+              );
+            }
+            throw error;
+          })
+        : null;
+
       const paymentRepository = manager.getRepository(Payment);
       const savedPayments = await paymentRepository.save(
-        payments.map((payment) =>
+        forOrder.map((payment) =>
           paymentRepository.create({
             orderId: order.id,
             amount: payment.amount,
@@ -283,12 +326,14 @@ export class OrdersService {
         payments: savedPayments,
         collected,
         pending: money(total - collected),
+        debtCollected: debt?.paid ?? 0,
+        debtPayments: debt?.payments ?? [],
       };
     });
 
     // La venta quedó registrada: avisar a la oficina en el momento.
     const collectedByMethod: Record<string, number> = {};
-    for (const payment of result.payments) {
+    for (const payment of [...result.payments, ...result.debtPayments]) {
       collectedByMethod[payment.method] = money(
         (collectedByMethod[payment.method] ?? 0) + Number(payment.amount),
       );
@@ -297,6 +342,7 @@ export class OrdersService {
     await this.notify('order.delivered', id, {
       collected: result.collected,
       pending: result.pending,
+      debtCollected: result.debtCollected,
       collectedByMethod,
     });
 

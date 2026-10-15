@@ -303,7 +303,7 @@ describe('Notas de pedido, reparto y entrega', () => {
       const r2 = await deliver(
         paid.order.id,
         [{ productId: paid.products[0].id, quantity: 1 }],
-        [{ amount: 1000, method: 'mercado_pago' }],
+        [{ amount: 1000, method: 'transfer' }],
       ).expect(201);
       expect(r2.body.order.paymentStatus).toBe('paid');
     });

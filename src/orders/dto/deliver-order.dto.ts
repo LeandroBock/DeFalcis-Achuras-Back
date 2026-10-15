@@ -1,6 +1,6 @@
 import {
   IsArray,
-  IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -10,7 +10,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import { PaymentMethod } from '../../payments/entities/payments.entity.js';
+import {
+  COLLECTION_METHODS,
+  CURRENT_ACCOUNT,
+  PaymentMethod,
+} from '../../payments/entities/payments.entity.js';
 
 export class DeliveredItemDto {
   @IsUUID()
@@ -27,8 +31,13 @@ export class DeliveryPaymentDto {
   @Min(0.01)
   amount: number;
 
-  @IsEnum(PaymentMethod)
-  method: PaymentMethod;
+  // Con "current_account" no se registra cobro: el saldo queda en la cuenta
+  // corriente del cliente.
+  @IsIn([...COLLECTION_METHODS, CURRENT_ACCOUNT], {
+    message:
+      'La forma de cobro tiene que ser efectivo, transferencia o cuenta corriente',
+  })
+  method: PaymentMethod | typeof CURRENT_ACCOUNT;
 }
 
 // Lo que el repartidor carga en el domicilio: lo que se pesó y entregó
@@ -39,7 +48,8 @@ export class DeliverOrderDto {
   @Type(() => DeliveredItemDto)
   items: DeliveredItemDto[];
 
-  // Vacío si el cliente no pagó nada (queda en cuenta corriente).
+  // Vacío si el cliente no pagó nada (queda en cuenta corriente). Puede
+  // superar el total de la entrega: el excedente paga deuda anterior.
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

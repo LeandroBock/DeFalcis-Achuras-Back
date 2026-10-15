@@ -83,6 +83,7 @@ export function validateEnv(config: Record<string, unknown>) {
   }
 
   errors.push(...validateArca(config));
+  errors.push(...validateMail(config));
 
   if (errors.length > 0) {
     throw new Error(`Configuración inválida:\n- ${errors.join('\n- ')}`);
@@ -126,6 +127,24 @@ function validateArca(config: Record<string, unknown>) {
     if (value(key) && !existsSync(value(key))) {
       errors.push(`No existe el archivo de ${key}: ${value(key)}`);
     }
+  }
+
+  return errors;
+}
+
+function validateMail(config: Record<string, unknown>) {
+  const errors: string[] = [];
+  const value = (key: string) => {
+    const raw = config[key];
+    return typeof raw === 'string' ? raw.trim() : '';
+  };
+
+  if (!!value('SMTP_USER') !== !!value('SMTP_PASS')) {
+    errors.push('SMTP_USER y SMTP_PASS van juntas: definí las dos o ninguna');
+  }
+
+  if (value('SMTP_PORT') && !/^\d{2,5}$/.test(value('SMTP_PORT'))) {
+    errors.push('SMTP_PORT debe ser un número de puerto (465 o 587)');
   }
 
   return errors;

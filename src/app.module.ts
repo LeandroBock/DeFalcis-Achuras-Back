@@ -35,13 +35,18 @@ import { OrderNotesAndDelivery1791944352000 } from './migrations/1791944352000-O
 import { EmployeeAccounts1791946933000 } from './migrations/1791946933000-EmployeeAccounts.js';
 import { CustomerPrices1791948255000 } from './migrations/1791948255000-CustomerPrices.js';
 import { UserSessions1791986794000 } from './migrations/1791986794000-UserSessions.js';
+import { InvoiceDetails1792000000000 } from './migrations/1792000000000-InvoiceDetails.js';
+import { mailConfig } from './config/mail.config.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // ENV_FILE: otro archivo en lugar de .env, para que el backend de prueba
+      // y los tests no tomen datos reales (ARCA, correo) del .env local.
+      envFilePath: process.env.ENV_FILE || '.env',
       validate: validateEnv,
-      load: [arcaConfig],
+      load: [arcaConfig, mailConfig],
     }),
 
     // Límite global por IP: 100 requests por minuto.
@@ -72,6 +77,7 @@ import { UserSessions1791986794000 } from './migrations/1791986794000-UserSessio
           EmployeeAccounts1791946933000,
           CustomerPrices1791948255000,
           UserSessions1791986794000,
+          InvoiceDetails1792000000000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.

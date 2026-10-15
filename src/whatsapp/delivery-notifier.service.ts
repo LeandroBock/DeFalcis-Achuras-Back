@@ -42,14 +42,19 @@ export function deliveryMessage(event: OrderEvent): string | null {
           `${METHOD_LABEL[method] ?? method} ${money(amount!)}`,
       );
 
+    const debt = data.debtCollected ?? 0;
     const lines = [
       `✅ Entregado: ${data.customerName}${driver}`,
-      `Total ${money(data.total)} · Cobrado ${money(data.collected ?? 0)}` +
+      `Total ${money(data.total)} · Cobrado ${money((data.collected ?? 0) + debt)}` +
         (methods.length ? ` (${methods.join(', ')})` : ''),
     ];
 
+    if (debt) {
+      lines.push(`Incluye ${money(debt)} de deuda anterior`);
+    }
+
     if (data.pending) {
-      lines.push(`Queda debiendo ${money(data.pending)}`);
+      lines.push(`Queda en cuenta corriente ${money(data.pending)}`);
     }
 
     return lines.join('\n');

@@ -1,5 +1,5 @@
 import {
-  IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -7,7 +7,10 @@ import {
   Min,
 } from 'class-validator';
 
-import { PaymentMethod } from '../entities/payments.entity.js';
+import {
+  COLLECTION_METHODS,
+  PaymentMethod,
+} from '../entities/payments.entity.js';
 
 export class CreatePaymentDto {
   @IsUUID()
@@ -17,7 +20,9 @@ export class CreatePaymentDto {
   @Min(0.01)
   amount: number;
 
-  @IsEnum(PaymentMethod)
+  @IsIn(COLLECTION_METHODS, {
+    message: 'La forma de cobro tiene que ser efectivo o transferencia',
+  })
   method: PaymentMethod;
 
   @IsOptional()

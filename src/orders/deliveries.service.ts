@@ -273,6 +273,12 @@ export class DeliveriesService {
       stillPendingCount: stillPending,
       totalSold,
       totalCollected,
+      // Deuda anterior que el repartidor cobró en las entregas.
+      debtCollected: money(
+        payments
+          .filter((payment) => !detailed.some((o) => o.id === payment.orderId))
+          .reduce((sum, payment) => sum + Number(payment.amount), 0),
+      ),
       // Lo que quedó en cuenta corriente.
       totalOnCredit: money(
         detailed.reduce(

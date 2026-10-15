@@ -57,14 +57,35 @@ export class Invoice {
   @UpdateDateColumn()
   updatedAt: Date;
 
+  // Datos del cliente tal como se facturaron (no cambian si después se
+  // edita el cliente). Null en las facturas anteriores a este registro.
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  customerName: string | null;
+
   // CUIT (11 dígitos) o DNI, sin guiones ni puntos
   @Column({ type: 'varchar', length: 20, nullable: true })
-  taxId?: string;
+  taxId?: string | null;
 
   // Condición frente al IVA (ARCA): 1 = Resp. Inscripto, 4 = Exento,
   // 5 = Consumidor Final, 6 = Monotributo
   @Column({ type: 'int', default: 5 })
   taxCondition: number;
+
+  @Column({ type: 'text', nullable: true })
+  customerAddress: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  customerEmail: string | null;
+
+  // Último envío por mail (o el error si no se pudo mandar).
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  emailedTo: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  emailedAt: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  emailError: string | null;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   netAmount: number;

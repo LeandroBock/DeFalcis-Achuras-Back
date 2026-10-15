@@ -105,6 +105,7 @@ describe('Avisos en tiempo real de las entregas', () => {
       total: 4800,
       collected: 4000,
       pending: 800,
+      debtCollected: 0,
       collectedByMethod: { cash: 3000, transfer: 1000 },
     });
   });
@@ -125,7 +126,7 @@ describe('Avisos en tiempo real de las entregas', () => {
     expect(sent[0].text).toBe(
       '✅ Entregado: Carnicería Centro (Repartidor Uno)\n' +
         'Total $4.800 · Cobrado $4.000 (Efectivo $3.000, Transferencia $1.000)\n' +
-        'Queda debiendo $800',
+        'Queda en cuenta corriente $800',
     );
   });
 

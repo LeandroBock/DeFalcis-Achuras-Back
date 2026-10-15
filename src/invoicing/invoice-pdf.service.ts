@@ -1,38 +1,43 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Inject, Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 
-import { Invoice, InvoiceStatus } from './entities/invoice.entity.js';
-import { Order } from '../orders/entities/order.entity.js';
-import { OrderItem } from '../order-items/entities/order-item.entity.js';
-import { Product } from '../products/entities/product.entity.js';
-import { Customer } from '../customers/entities/customer.entity.js';
 import { arcaConfig } from '../config/arca.config.js';
 import type { ArcaConfig } from '../config/arca.config.js';
+import {
+  FACTURA_A,
+  IVA_CONDITION_LABEL,
+  IVA_CONSUMIDOR_FINAL,
+  VOUCHER,
+  formatVoucherNumber,
+  resolveDocument,
+} from './invoice-calc.js';
+import type { InvoiceLine } from './invoice-calc.js';
 
 // URL base del QR según la especificación de ARCA
 const QR_BASE_URL = 'https://www.afip.gob.ar/fe/qr/';
 
-const VOUCHER: Record<number, { letter: string; code: string }> = {
-  1: { letter: 'A', code: '001' },
-  6: { letter: 'B', code: '006' },
-};
-
-const IVA_CONDITION_LABEL: Record<number, string> = {
-  1: 'IVA Responsable Inscripto',
-  4: 'IVA Sujeto Exento',
-  5: 'Consumidor Final',
-  6: 'Responsable Monotributo',
-};
-
-const toCents = (value: number | string) => Math.round(Number(value) * 100);
+export interface InvoicePdfData {
+  // Borrador: vista previa antes de emitir, sin número, CAE ni QR.
+  draft: boolean;
+  cbteTipo: number;
+  ptoVta: number;
+  cbteNro: number | null;
+  cbteFch: string | null; // YYYY-MM-DD
+  cae: string | null;
+  caeVto: string | null;
+  receiver: {
+    name: string;
+    address: string | null;
+    taxId: string | null;
+    taxCondition: number;
+  };
+  lines: InvoiceLine[];
+  totalCents: number;
+  netCents: number;
+  vatCents: number;
+  vatByRate: { rate: number; vatCents: number }[];
+}
 
 const money = (cents: number) =>
   '$ ' +
@@ -51,135 +56,58 @@ const formatDate = (value?: string | null) =>
 @Injectable()
 export class InvoicePdfService {
   constructor(
-    @InjectRepository(Invoice)
-    private readonly invoicesRepository: Repository<Invoice>,
-
-    @InjectRepository(Order)
-    private readonly ordersRepository: Repository<Order>,
-
-    @InjectRepository(OrderItem)
-    private readonly orderItemsRepository: Repository<OrderItem>,
-
-    @InjectRepository(Product)
-    private readonly productsRepository: Repository<Product>,
-
-    @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
-
     @Inject(arcaConfig.KEY)
     private readonly arca: ArcaConfig,
   ) {}
 
-  async generate(invoiceId: string) {
-    const invoice = await this.invoicesRepository.findOne({
-      where: { id: invoiceId },
-    });
+  filename(data: Pick<InvoicePdfData, 'cbteTipo' | 'ptoVta' | 'cbteNro'>) {
+    if (!data.cbteNro) return 'factura-borrador.pdf';
+    return `${this.arca.cuit}_${String(data.cbteTipo).padStart(3, '0')}_${String(data.ptoVta).padStart(5, '0')}_${String(data.cbteNro).padStart(8, '0')}.pdf`;
+  }
 
-    if (!invoice) {
-      throw new NotFoundException('Factura no encontrada');
-    }
-
-    if (
-      invoice.status !== InvoiceStatus.AUTHORIZED ||
-      !invoice.cae ||
-      !invoice.cbteNro
-    ) {
-      throw new BadRequestException(
-        'La factura todavía no fue autorizada por ARCA',
-      );
-    }
-
-    const order = await this.ordersRepository.findOne({
-      where: { id: invoice.orderId },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Venta no encontrada');
-    }
-
-    const [customer, items] = await Promise.all([
-      this.customersRepository.findOne({ where: { id: order.customerId } }),
-      this.orderItemsRepository.find({ where: { orderId: order.id } }),
-    ]);
-
-    const products = items.length
-      ? await this.productsRepository.find({
-          where: { id: In(items.map((item) => item.productId)) },
-        })
-      : [];
-    const productById = new Map(products.map((p) => [p.id, p]));
-
-    const isA = invoice.cbteTipo === 1;
-    const voucher = VOUCHER[invoice.cbteTipo] ?? { letter: '?', code: '000' };
+  async render(data: InvoicePdfData): Promise<Buffer> {
+    const isA = data.cbteTipo === FACTURA_A;
+    const voucher = VOUCHER[data.cbteTipo] ?? { letter: '?', code: '000' };
 
     const { cuit, business } = this.arca;
-    const number = `${String(invoice.ptoVta).padStart(5, '0')}-${String(invoice.cbteNro).padStart(8, '0')}`;
-    const { docTipo, docNro } = this.resolveDocument(customer?.taxId);
+    const number = data.cbteNro
+      ? formatVoucherNumber(data.ptoVta, data.cbteNro)
+      : `${String(data.ptoVta).padStart(5, '0')}-(a asignar)`;
+    const { docTipo, docNro } = resolveDocument(data.receiver.taxId);
 
-    // ---------- Renglones y totales (mismo criterio que la emisión) ----------
-    const lines = items.map((item) => {
-      const product = productById.get(item.productId);
-      const rate = Number(product?.vatRate ?? 21);
-      const grossCents = toCents(item.subtotal);
-      const factor = 1 + rate / 100;
+    // ---------- QR fiscal (solo comprobantes autorizados) ----------
+    let qrBuffer: Buffer | null = null;
 
-      return {
-        name: product?.name ?? 'Producto',
-        unit: product?.unit === 'kg' ? 'kg' : 'u.',
-        qty: Number(item.quantity),
-        rate,
-        grossCents,
-        netCents: Math.round(grossCents / factor),
-        unitGrossCents: toCents(item.unitPrice),
-        unitNetCents: Math.round(toCents(item.unitPrice) / factor),
+    if (!data.draft && data.cae && data.cbteNro) {
+      const qrData = {
+        ver: 1,
+        fecha: data.cbteFch,
+        cuit: Number(cuit),
+        ptoVta: data.ptoVta,
+        tipoCmp: data.cbteTipo,
+        nroCmp: data.cbteNro,
+        importe: data.totalCents / 100,
+        moneda: 'PES',
+        ctz: 1,
+        tipoDocRec: docTipo,
+        nroDocRec: docNro,
+        tipoCodAut: 'E', // E = CAE
+        codAut: Number(data.cae),
       };
-    });
 
-    const grossByRate = new Map<number, number>();
-    lines.forEach((l) =>
-      grossByRate.set(l.rate, (grossByRate.get(l.rate) ?? 0) + l.grossCents),
-    );
-
-    let totalCents = 0;
-    let netCents = 0;
-    let vatCents = 0;
-    const vatByRate: { rate: number; vatCents: number }[] = [];
-
-    [...grossByRate.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .forEach(([rate, gross]) => {
-        const base = Math.round(gross / (1 + rate / 100));
-        totalCents += gross;
-        netCents += base;
-        vatCents += gross - base;
-        vatByRate.push({ rate, vatCents: gross - base });
-      });
-
-    // ---------- QR fiscal ----------
-    const qrData = {
-      ver: 1,
-      fecha: invoice.cbteFch,
-      cuit: Number(cuit),
-      ptoVta: invoice.ptoVta,
-      tipoCmp: invoice.cbteTipo,
-      nroCmp: invoice.cbteNro,
-      importe: Number(invoice.total),
-      moneda: 'PES',
-      ctz: 1,
-      tipoDocRec: docTipo,
-      nroDocRec: docNro,
-      tipoCodAut: 'E', // E = CAE
-      codAut: Number(invoice.cae),
-    };
-
-    const qrUrl = `${QR_BASE_URL}?p=${Buffer.from(JSON.stringify(qrData)).toString('base64')}`;
-    const qrBuffer = await QRCode.toBuffer(qrUrl, { margin: 1, width: 300 });
+      const qrUrl = `${QR_BASE_URL}?p=${Buffer.from(JSON.stringify(qrData)).toString('base64')}`;
+      qrBuffer = await QRCode.toBuffer(qrUrl, { margin: 1, width: 300 });
+    }
 
     // ---------- Dibujo del PDF ----------
     const doc = new PDFDocument({
       size: 'A4',
       margin: 40,
-      info: { Title: `Factura ${voucher.letter} ${number}` },
+      info: {
+        Title: data.draft
+          ? `Borrador de factura ${voucher.letter}`
+          : `Factura ${voucher.letter} ${number}`,
+      },
     });
 
     const chunks: Buffer[] = [];
@@ -194,7 +122,10 @@ export class InvoicePdfService {
     doc
       .font('Helvetica-Bold')
       .fontSize(9)
-      .text('ORIGINAL', 40, 28, { width: 515, align: 'center' });
+      .text(data.draft ? 'BORRADOR - SIN VALIDEZ FISCAL' : 'ORIGINAL', 40, 28, {
+        width: 515,
+        align: 'center',
+      });
 
     // Cabecera
     doc.rect(40, 45, 515, 110).stroke();
@@ -230,9 +161,12 @@ export class InvoicePdfService {
       .font('Helvetica')
       .fontSize(9)
       .text(`N° ${number}`, 335, 80, { width: 210 })
-      .text(`Fecha de emisión: ${formatDate(invoice.cbteFch)}`, 335, 94, {
-        width: 210,
-      })
+      .text(
+        `Fecha de emisión: ${data.cbteFch ? formatDate(data.cbteFch) : '(al emitir)'}`,
+        335,
+        94,
+        { width: 210 },
+      )
       .text(`CUIT: ${cuit}`, 335, 108, { width: 210 })
       .text(`Ingresos Brutos: ${business.iibb}`, 335, 122, {
         width: 210,
@@ -249,13 +183,15 @@ export class InvoicePdfService {
     doc
       .font('Helvetica')
       .fontSize(9)
-      .text(`Cliente: ${customer?.name ?? 'Consumidor Final'}`, 50, 173, {
+      .text(`Cliente: ${data.receiver.name || 'Consumidor Final'}`, 50, 173, {
         width: 270,
       })
-      .text(`Domicilio: ${customer?.address ?? '-'}`, 50, 195, { width: 270 })
+      .text(`Domicilio: ${data.receiver.address || '-'}`, 50, 195, {
+        width: 270,
+      })
       .text(`${docLabel}: ${docValue}`, 335, 173, { width: 210 })
       .text(
-        `Condición frente al IVA: ${IVA_CONDITION_LABEL[customer?.taxCondition ?? 5] ?? 'Consumidor Final'}`,
+        `Condición frente al IVA: ${IVA_CONDITION_LABEL[data.receiver.taxCondition] ?? IVA_CONDITION_LABEL[IVA_CONSUMIDOR_FINAL]}`,
         335,
         195,
         { width: 210 },
@@ -295,7 +231,7 @@ export class InvoicePdfService {
 
     doc.font('Helvetica').fontSize(8.5);
 
-    for (const line of lines) {
+    for (const line of data.lines) {
       if (y > 640) {
         doc.addPage();
         y = 40;
@@ -309,7 +245,7 @@ export class InvoicePdfService {
         quantity(line.qty),
         line.unit,
         money(isA ? line.unitNetCents : line.unitGrossCents),
-        `${String(line.rate).replace('.', ',')}%`,
+        line.rate ? `${String(line.rate).replace('.', ',')}%` : '-',
         money(isA ? line.netCents : line.grossCents),
       ];
 
@@ -337,17 +273,19 @@ export class InvoicePdfService {
 
     const totals: { label: string; cents: number; bold?: boolean }[] = isA
       ? [
-          { label: 'Importe neto gravado', cents: netCents },
-          ...vatByRate.map((v) => ({
+          { label: 'Importe neto gravado', cents: data.netCents },
+          ...data.vatByRate.map((v) => ({
             label: `IVA ${String(v.rate).replace('.', ',')}%`,
             cents: v.vatCents,
           })),
-          { label: 'Importe total', cents: totalCents, bold: true },
+          { label: 'Importe total', cents: data.totalCents, bold: true },
         ]
-      : [
-          { label: 'Importe total', cents: totalCents, bold: true },
-          { label: 'IVA contenido', cents: vatCents },
-        ];
+      : data.vatCents > 0
+        ? [
+            { label: 'Importe total', cents: data.totalCents, bold: true },
+            { label: 'IVA contenido', cents: data.vatCents },
+          ]
+        : [{ label: 'Importe total', cents: data.totalCents, bold: true }];
 
     totals.forEach((row) => {
       doc
@@ -358,36 +296,34 @@ export class InvoicePdfService {
       y += 15;
     });
 
-    // Pie: QR + CAE
-    doc.image(qrBuffer, 40, 700, { width: 90 });
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(10)
-      .text('Comprobante Autorizado', 145, 712, { width: 300 });
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .text(`CAE N°: ${invoice.cae}`, 145, 730, { width: 300 })
-      .text(`Fecha de Vto. de CAE: ${formatDate(invoice.caeVto)}`, 145, 744, {
-        width: 300,
-      });
+    // Pie: QR + CAE, o la aclaración del borrador
+    if (qrBuffer) {
+      doc.image(qrBuffer, 40, 700, { width: 90 });
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .text('Comprobante Autorizado', 145, 712, { width: 300 });
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .text(`CAE N°: ${data.cae}`, 145, 730, { width: 300 })
+        .text(`Fecha de Vto. de CAE: ${formatDate(data.caeVto)}`, 145, 744, {
+          width: 300,
+        });
+    } else {
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .text(
+          'Vista previa: el número, la fecha y el CAE los asigna ARCA al emitir.',
+          40,
+          720,
+          { width: 515, align: 'center' },
+        );
+    }
 
     doc.end();
 
-    const buffer = await finished;
-    const filename = `${cuit}_${String(invoice.cbteTipo).padStart(3, '0')}_${String(invoice.ptoVta).padStart(5, '0')}_${String(invoice.cbteNro).padStart(8, '0')}.pdf`;
-
-    return { buffer, filename };
-  }
-
-  // Tiene que coincidir con la regla usada al emitir la factura
-  private resolveDocument(taxId?: string | null) {
-    const digits = (taxId ?? '').replace(/\D/g, '');
-
-    if (digits.length === 11) return { docTipo: 80, docNro: Number(digits) };
-    if (digits.length >= 7 && digits.length <= 8) {
-      return { docTipo: 96, docNro: Number(digits) };
-    }
-    return { docTipo: 99, docNro: 0 };
+    return finished;
   }
 }
