@@ -27,6 +27,7 @@ import { InvoicePdfService } from './invoice-pdf.service.js';
 import type { InvoicePdfData } from './invoice-pdf.service.js';
 import {
   FACTURA_A,
+  FACTURA_A_CONDITIONS,
   FACTURA_C,
   IVA_CONSUMIDOR_FINAL,
   VAT_ID_BY_RATE,
@@ -197,10 +198,7 @@ export class InvoicingService {
 
   // Tipo de factura, importes y lo que impide emitirla.
   private draft(sale: Sale, billing: Billing) {
-    const cbteTipo = voucherTypeFor(
-      this.issuerMonotributo,
-      billing.taxCondition,
-    );
+    const cbteTipo = voucherTypeFor(this.issuerMonotributo);
     const calc = computeInvoice(sale.items, cbteTipo);
     const problems: string[] = [];
     const taxId = billing.taxId ?? '';
@@ -223,6 +221,15 @@ export class InvoicingService {
 
     if (cbteTipo === FACTURA_A && taxId.length !== 11) {
       problems.push('Para Factura A el cliente necesita un CUIT válido');
+    }
+
+    if (
+      cbteTipo === FACTURA_A &&
+      !FACTURA_A_CONDITIONS.includes(billing.taxCondition)
+    ) {
+      problems.push(
+        'Para Factura A el cliente tiene que ser Responsable Inscripto o Monotributista',
+      );
     }
 
     if (sale.items.length === 0) {

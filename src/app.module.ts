@@ -24,6 +24,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 import { InvoicingModule } from './invoicing/invoicing.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
+import { PriceListsModule } from './price-lists/price-lists.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { arcaConfig } from './config/arca.config.js';
 import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
@@ -36,6 +37,7 @@ import { EmployeeAccounts1791946933000 } from './migrations/1791946933000-Employ
 import { CustomerPrices1791948255000 } from './migrations/1791948255000-CustomerPrices.js';
 import { UserSessions1791986794000 } from './migrations/1791986794000-UserSessions.js';
 import { InvoiceDetails1792000000000 } from './migrations/1792000000000-InvoiceDetails.js';
+import { PriceListsRoutesReceipts1792100000000 } from './migrations/1792100000000-PriceListsRoutesReceipts.js';
 import { mailConfig } from './config/mail.config.js';
 
 @Module({
@@ -78,6 +80,7 @@ import { mailConfig } from './config/mail.config.js';
           CustomerPrices1791948255000,
           UserSessions1791986794000,
           InvoiceDetails1792000000000,
+          PriceListsRoutesReceipts1792100000000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.
@@ -107,6 +110,8 @@ import { mailConfig } from './config/mail.config.js';
     InventoryModule,
 
     CustomersModule,
+
+    PriceListsModule,
 
     OrdersModule,
 

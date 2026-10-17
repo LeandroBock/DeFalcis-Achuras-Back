@@ -1,5 +1,6 @@
 import {
   WhatsAppClient,
+  WhatsAppDocument,
   WhatsAppConnectionState,
   WhatsAppConnectionStatus,
   notConnected,
@@ -16,6 +17,11 @@ export class FakeWhatsAppClient implements WhatsAppClient {
 
   readonly sent: { phone: string; text: string; externalMessageId: string }[] =
     [];
+
+  readonly documents: (WhatsAppDocument & {
+    phone: string;
+    externalMessageId: string;
+  })[] = [];
 
   getState() {
     return this.state;
@@ -45,6 +51,24 @@ export class FakeWhatsAppClient implements WhatsAppClient {
       externalMessageId: `FAKE-${this.sent.length + 1}`,
     };
     this.sent.push(sent);
+
+    return Promise.resolve({
+      externalMessageId: sent.externalMessageId,
+      phone: sent.phone,
+    });
+  }
+
+  sendDocument(phone: string, document: WhatsAppDocument) {
+    if (this.state.status !== WhatsAppConnectionStatus.CONNECTED) {
+      return Promise.reject(notConnected());
+    }
+
+    const sent = {
+      ...document,
+      phone: toWhatsAppNumber(phone),
+      externalMessageId: `FAKE-DOC-${this.documents.length + 1}`,
+    };
+    this.documents.push(sent);
 
     return Promise.resolve({
       externalMessageId: sent.externalMessageId,

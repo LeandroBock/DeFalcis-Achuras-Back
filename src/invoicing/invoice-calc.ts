@@ -38,21 +38,18 @@ export const VAT_ID_BY_RATE: Record<string, number> = {
 export const toCents = (value: number | string) =>
   Math.round(Number(value) * 100);
 
-// Un emisor monotributista emite Factura C (sin IVA discriminado). Un
-// responsable inscripto emite A a inscriptos y monotributistas, B al resto.
+// La empresa factura siempre A (responsable inscripto). Un emisor
+// monotributista emitiría Factura C (sin IVA discriminado).
 export function issuerIsMonotributo(ivaCondition: string) {
   return /monotribut/i.test(ivaCondition);
 }
 
-export function voucherTypeFor(
-  issuerMonotributo: boolean,
-  taxCondition: number,
-) {
-  if (issuerMonotributo) return FACTURA_C;
-  return [IVA_RESP_INSCRIPTO, IVA_MONOTRIBUTO].includes(taxCondition)
-    ? FACTURA_A
-    : FACTURA_B;
+export function voucherTypeFor(issuerMonotributo: boolean) {
+  return issuerMonotributo ? FACTURA_C : FACTURA_A;
 }
+
+// Condiciones de IVA del receptor que ARCA acepta en una Factura A.
+export const FACTURA_A_CONDITIONS = [IVA_RESP_INSCRIPTO, IVA_MONOTRIBUTO];
 
 // 80 = CUIT, 96 = DNI, 99 = Consumidor Final sin identificar
 export function resolveDocument(taxId?: string | null) {

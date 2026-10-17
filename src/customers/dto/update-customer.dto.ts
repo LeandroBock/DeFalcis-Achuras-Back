@@ -1,4 +1,12 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateCustomerDto {
   @IsOptional()
@@ -23,4 +31,14 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Tilde: mostrar y cobrar su deuda de cuenta corriente en las entregas.
+  @IsOptional()
+  @IsBoolean()
+  collectDebt?: boolean;
+
+  // Lista de precios que se le cobra (null para el precio normal).
+  @ValidateIf((dto: { priceListId?: string | null }) => !!dto.priceListId)
+  @IsUUID()
+  priceListId?: string | null;
 }

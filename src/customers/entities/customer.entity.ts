@@ -35,6 +35,15 @@ export class Customer {
   @Column({ type: 'int', default: 5 })
   taxCondition: number;
 
+  // Lista de precios que se le cobra (sin lista: precio normal).
+  @Column({ type: 'uuid', nullable: true })
+  priceListId?: string | null;
+
+  // Si está tildado, la deuda de cuenta corriente se le muestra al tomar el
+  // pedido y al repartidor para cobrarla en la entrega.
+  @Column({ default: false })
+  collectDebt: boolean;
+
   @Column({ default: true })
   isActive: boolean;
 

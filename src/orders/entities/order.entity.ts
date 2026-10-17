@@ -25,6 +25,10 @@ export enum OrderPaymentStatus {
 
 @Index('IDX_ORDERS_createdAt', ['createdAt'])
 @Index('IDX_ORDERS_assignedToId', ['assignedToId'])
+@Index('UQ_ORDERS_receiptNumber', ['receiptNumber'], {
+  unique: true,
+  where: '"receiptNumber" IS NOT NULL',
+})
 @Entity('ORDERS')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -65,6 +69,10 @@ export class Order {
   @Column({ type: 'date', nullable: true })
   deliveryDate?: string | null;
 
+  // Posición en la ruta del repartidor (1 = primera parada).
+  @Column({ type: 'int', nullable: true })
+  routeOrder?: number | null;
+
   @Column({ type: 'timestamp', nullable: true })
   deliveredAt?: Date | null;
 
@@ -74,6 +82,21 @@ export class Order {
   // Comentario de la entrega, o motivo si no se pudo entregar.
   @Column({ type: 'text', nullable: true })
   deliveryComment?: string | null;
+
+  // Recibo X de la entrega (se numera al confirmarla).
+  @Column({ type: 'int', nullable: true })
+  receiptNumber?: number | null;
+
+  // Lo cobrado en la entrega que pagó deuda anterior (va en el recibo).
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  debtCollected: number;
+
+  // Envío del recibo por WhatsApp al cliente.
+  @Column({ type: 'timestamp', nullable: true })
+  receiptSentAt?: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  receiptError?: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

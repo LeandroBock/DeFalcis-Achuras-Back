@@ -11,6 +11,7 @@ import {
   DataSource,
   EntityManager,
   FindOptionsWhere,
+  In,
   Repository,
 } from 'typeorm';
 
@@ -25,17 +26,18 @@ import {
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 
 import { Customer } from '../customers/entities/customer.entity.js';
+import { Product } from '../products/entities/product.entity.js';
 
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { UpdateOrderDto } from './dto/update-order.dto.js';
-import { AssignOrderDto } from './dto/assign-order.dto.js';
+import { AssignOrderDto, BulkAssignOrdersDto } from './dto/assign-order.dto.js';
 import { DeliverOrderDto } from './dto/deliver-order.dto.js';
 import { OrdersQueryDto } from './dto/orders-query.dto.js';
 
 import { InventoryService } from '../inventory/inventory.service.js';
 
 import { findActiveProductsById } from '../products/active-products.js';
-import { priceFor, specialPricesFor } from '../customers/customer-prices.js';
+import { pricingForCustomer } from '../customers/customer-prices.js';
 import { findMaybePaginated } from '../common/pagination.js';
 import {
   CURRENT_ACCOUNT,
@@ -129,6 +131,9 @@ export class OrdersService {
         customerId,
         notes,
         assignedToId: assignedToId ?? null,
+        routeOrder: assignedToId
+          ? await this.nextRouteOrder(manager, assignedToId)
+          : null,
         deliveryDate: deliveryDate ?? null,
         status: OrderStatus.PENDING,
         total: this.sumSubtotals(orderItems),
@@ -188,7 +193,7 @@ export class OrdersService {
         await this.findDriver(manager, assignedToId);
       }
 
-      order.assignedToId = assignedToId;
+      await this.setDriver(manager, order, assignedToId);
       if (deliveryDate !== undefined) order.deliveryDate = deliveryDate;
 
       return manager.getRepository(Order).save(order);
@@ -197,6 +202,62 @@ export class OrdersService {
     await this.notify('order.assigned', id);
 
     return order;
+  }
+
+  // Asigna varias notas pendientes al mismo repartidor de una vez. Las nuevas
+  // se suman al final de su ruta, en el orden en que vienen.
+  async assignMany({
+    orderIds,
+    assignedToId,
+    deliveryDate,
+  }: BulkAssignOrdersDto) {
+    const ids = [...new Set(orderIds)];
+
+    const orders = await this.dataSource.transaction(async (manager) => {
+      if (assignedToId) {
+        await this.findDriver(manager, assignedToId);
+      }
+
+      const found = await manager.getRepository(Order).find({
+        where: { id: In(ids) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const byId = new Map(found.map((order) => [order.id, order]));
+
+      const missing = ids.filter((id) => !byId.has(id));
+      if (missing.length) {
+        throw new NotFoundException(
+          `No se encontraron ${missing.length} de las notas elegidas`,
+        );
+      }
+
+      const notPending = found.filter(
+        (order) => order.status !== OrderStatus.PENDING,
+      );
+      if (notPending.length) {
+        throw new ConflictException(
+          notPending.length === 1
+            ? 'Una de las notas elegidas ya fue entregada o anulada'
+            : `${notPending.length} de las notas elegidas ya fueron entregadas o anuladas`,
+        );
+      }
+
+      const saved: Order[] = [];
+      for (const id of ids) {
+        const order = byId.get(id)!;
+        await this.setDriver(manager, order, assignedToId);
+        if (deliveryDate !== undefined) order.deliveryDate = deliveryDate;
+        saved.push(await manager.getRepository(Order).save(order));
+      }
+
+      return saved;
+    });
+
+    for (const order of orders) {
+      await this.notify('order.assigned', order.id);
+    }
+
+    return { assigned: orders.length, orders };
   }
 
   async cancel(id: string) {
@@ -306,7 +367,15 @@ export class OrdersService {
         ),
       );
 
+      // Número del recibo X que se le deja (y se le manda) al cliente.
+      const [{ nextval }]: { nextval: string }[] = await manager.query(
+        `SELECT nextval('"ORDER_RECEIPT_SEQ"')`,
+      );
+
       order.total = total;
+      order.receiptNumber = Number(nextval);
+      order.debtCollected = debt?.paid ?? 0;
+      order.routeOrder = null;
       order.status = OrderStatus.DELIVERED;
       order.deliveredAt = new Date();
       order.deliveredById = user.sub;
@@ -357,6 +426,7 @@ export class OrdersService {
       this.assertCanDeliver(order, user);
 
       order.assignedToId = null;
+      order.routeOrder = null;
       order.deliveryComment = reason;
 
       return manager.getRepository(Order).save(order);
@@ -451,6 +521,32 @@ export class OrdersService {
 
   // ---------- Auxiliares ----------
 
+  // Cambia el repartidor de la nota: si es otro, va al final de su ruta.
+  private async setDriver(
+    manager: EntityManager,
+    order: Order,
+    assignedToId: string | null,
+  ) {
+    if (order.assignedToId === assignedToId) return;
+
+    order.assignedToId = assignedToId;
+    order.routeOrder = assignedToId
+      ? await this.nextRouteOrder(manager, assignedToId)
+      : null;
+  }
+
+  private async nextRouteOrder(manager: EntityManager, driverId: string) {
+    const { max }: { max: number | null } = (await manager
+      .getRepository(Order)
+      .createQueryBuilder('o')
+      .select('MAX(o.routeOrder)', 'max')
+      .where('o.assignedToId = :driverId', { driverId })
+      .andWhere('o.status = :status', { status: OrderStatus.PENDING })
+      .getRawOne()) ?? { max: null };
+
+    return Number(max ?? 0) + 1;
+  }
+
   private async findActiveCustomer(manager: EntityManager, customerId: string) {
     const customer = await manager
       .getRepository(Customer)
@@ -505,24 +601,21 @@ export class OrdersService {
     }
   }
 
-  // Ítems de una nota: precio vigente para ese cliente (su precio especial si
-  // tiene, si no el normal) y kilos pedidos.
+  // Ítems de una nota: precio vigente para ese cliente (su lista y su
+  // descuento o precio especial, si tiene) y kilos pedidos.
   private async buildNoteItems(
     manager: EntityManager,
     customerId: string,
     items: { productId: string; quantity: number }[],
   ) {
     const productIds = items.map((item) => item.productId);
-    const [productsById, specialPrices] = await Promise.all([
+    const [productsById, pricing] = await Promise.all([
       findActiveProductsById(manager, productIds),
-      specialPricesFor(manager, customerId, productIds),
+      pricingForCustomer(manager, customerId, productIds),
     ]);
 
     return items.map((item) => {
-      const unitPrice = priceFor(
-        specialPrices,
-        productsById.get(item.productId)!,
-      );
+      const unitPrice = pricing.priceOf(productsById.get(item.productId)!);
 
       return manager.getRepository(OrderItem).create({
         productId: item.productId,
@@ -558,12 +651,12 @@ export class OrdersService {
       .map((item) => item.productId)
       .filter((productId) => !note.has(productId));
 
-    const [addedProducts, specialPrices] = addedIds.length
+    const [addedProducts, pricing] = addedIds.length
       ? await Promise.all([
           findActiveProductsById(manager, addedIds),
-          specialPricesFor(manager, customerId, addedIds),
+          pricingForCustomer(manager, customerId, addedIds),
         ])
-      : [new Map(), new Map<string, number>()];
+      : [new Map<string, Product>(), null];
 
     const delivered = new Map(
       dto.items.map((item) => [item.productId, item.quantity]),
@@ -577,7 +670,7 @@ export class OrdersService {
         const requested = kilos(note.get(productId)?.requested ?? 0);
         const unitPrice =
           note.get(productId)?.unitPrice ??
-          priceFor(specialPrices, addedProducts.get(productId)!);
+          pricing!.priceOf(addedProducts.get(productId)!);
 
         return manager.getRepository(OrderItem).create({
           productId,

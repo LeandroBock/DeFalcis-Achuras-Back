@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 
 import { Customer } from '../customers/entities/customer.entity.js';
-import { CustomerPrice } from '../customers/entities/customer-price.entity.js';
+import { pricingFor } from '../customers/customer-prices.js';
 import { OrderItem } from '../order-items/entities/order-item.entity.js';
 import { Payment } from '../payments/entities/payments.entity.js';
 import { Product } from '../products/entities/product.entity.js';
@@ -50,6 +54,8 @@ export class DeliveriesService {
 
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+
+    private readonly dataSource: DataSource,
   ) {}
 
   // Usuarios a los que se les pueden asignar notas.
@@ -62,14 +68,16 @@ export class DeliveriesService {
   }
 
   // Notas pendientes asignadas al repartidor, con lo necesario para ir al
-  // domicilio: cliente (dirección, teléfono) y productos. Con `date`, solo
-  // las de ese día y las que no tienen fecha.
+  // domicilio: cliente (dirección, teléfono) y productos, en el orden de la
+  // ruta que armó la oficina. Con `date`, solo las de ese día y las que no
+  // tienen fecha.
   async pendingFor(userId: string, date?: string) {
     const query = this.ordersRepository
       .createQueryBuilder('o')
       .where('o.assignedToId = :userId', { userId })
       .andWhere('o.status = :status', { status: OrderStatus.PENDING })
       .orderBy('o.deliveryDate', 'ASC', 'NULLS LAST')
+      .addOrderBy('o.routeOrder', 'ASC', 'NULLS LAST')
       .addOrderBy('o.createdAt', 'ASC');
 
     if (date) {
@@ -81,6 +89,56 @@ export class DeliveriesService {
     const orders = await query.getMany();
 
     return this.withDetails(orders);
+  }
+
+  // Una nota con los datos para entregarla (para cargar la entrega desde la
+  // oficina).
+  async detail(orderId: string) {
+    const order = await this.ordersRepository.findOneBy({ id: orderId });
+
+    if (!order) {
+      throw new NotFoundException('Pedido no encontrado');
+    }
+
+    const [detailed] = await this.withDetails([order]);
+    return detailed;
+  }
+
+  // Orden de la ruta del repartidor: orderIds de la primera a la última
+  // parada. Tienen que ser notas pendientes asignadas a él; las suyas que no
+  // vengan quedan al final, en el orden que tenían.
+  async setRoute(driverId: string, orderIds: string[]) {
+    const ids = [...new Set(orderIds)];
+
+    await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Order);
+      const pending = await repository.find({
+        where: { assignedToId: driverId, status: OrderStatus.PENDING },
+        order: {
+          routeOrder: { direction: 'ASC', nulls: 'LAST' },
+          createdAt: 'ASC',
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const byId = new Map(pending.map((order) => [order.id, order]));
+
+      if (ids.some((id) => !byId.has(id))) {
+        throw new BadRequestException(
+          'Alguna de las notas ya no está pendiente o no es de este repartidor. Actualizá la pantalla.',
+        );
+      }
+
+      const rest = pending.filter((order) => !ids.includes(order.id));
+      const ordered = [...ids.map((id) => byId.get(id)!), ...rest];
+
+      for (const [index, order] of ordered.entries()) {
+        if (order.routeOrder !== index + 1) {
+          await repository.update(order.id, { routeOrder: index + 1 });
+        }
+      }
+    });
+
+    return this.pendingFor(driverId);
   }
 
   // Tablero del día para la oficina: las notas a entregar ese día y las
@@ -346,28 +404,39 @@ export class DeliveriesService {
 
     const customerIds = [...new Set(orders.map((o) => o.customerId))];
 
-    const [items, customers, specialPrices] = await Promise.all([
+    const [items, customers, pricing, activeProducts] = await Promise.all([
       this.orderItemsRepository.find({
         where: { orderId: In(orderIds) },
         order: { createdAt: 'ASC', id: 'ASC' },
       }),
       this.customersRepository.find({ where: { id: In(customerIds) } }),
-      this.ordersRepository.manager
-        .getRepository(CustomerPrice)
-        .find({ where: { customerId: In(customerIds) } }),
+      pricingFor(this.dataSource.manager, customerIds),
+      this.productsRepository.find({
+        select: { id: true, salePrice: true },
+        where: { isActive: true },
+      }),
     ]);
 
-    // Lo que cada cliente debe de entregas anteriores (cuenta corriente),
-    // para que el repartidor lo sepa al llegar.
-    const balances = await this.pendingBalances(customerIds);
+    // Lo que deben de entregas anteriores (cuenta corriente) los clientes con
+    // el tilde de cobrar la deuda, para que el repartidor lo sepa al llegar.
+    const balances = await this.pendingBalances(
+      customers.filter((c) => c.collectDebt).map((c) => c.id),
+    );
 
-    // Precios especiales por cliente: el repartidor los necesita si agrega
-    // productos en el momento de la entrega.
+    // Precio de cada producto para el cliente (lista + descuentos) cuando no
+    // es el normal: el repartidor lo necesita si agrega productos en el
+    // momento de la entrega.
     const pricesByCustomer = new Map<string, Record<string, number>>();
-    for (const price of specialPrices) {
-      const prices = pricesByCustomer.get(price.customerId) ?? {};
-      prices[price.productId] = Number(price.price);
-      pricesByCustomer.set(price.customerId, prices);
+    for (const customerId of customerIds) {
+      const customerPricing = pricing.get(customerId);
+      const prices: Record<string, number> = {};
+      for (const product of activeProducts) {
+        const price = customerPricing?.priceOf(product);
+        if (price !== undefined && price !== Number(product.salePrice)) {
+          prices[product.id] = price;
+        }
+      }
+      pricesByCustomer.set(customerId, prices);
     }
 
     const products = items.length
@@ -389,6 +458,11 @@ export class DeliveriesService {
         total: Number(order.total),
         notes: order.notes ?? null,
         deliveryDate: order.deliveryDate ?? null,
+        routeOrder: order.routeOrder ?? null,
+        assignedToId: order.assignedToId ?? null,
+        receiptNumber: order.receiptNumber ?? null,
+        receiptSentAt: order.receiptSentAt ?? null,
+        receiptError: order.receiptError ?? null,
         deliveredAt: order.deliveredAt ?? null,
         deliveryComment: order.deliveryComment ?? null,
         createdAt: order.createdAt,
@@ -403,6 +477,7 @@ export class DeliveriesService {
               notes: customer.notes ?? null,
               taxId: customer.taxId ?? null,
               taxCondition: customer.taxCondition,
+              collectDebt: customer.collectDebt,
               pendingBalance: balances.get(customer.id) ?? 0,
               specialPrices: pricesByCustomer.get(customer.id) ?? {},
             }

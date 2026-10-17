@@ -172,7 +172,8 @@ describe('Facturación con revisión previa', () => {
   it('la vista previa muestra los datos del cliente y el tipo de factura', async () => {
     const { orderId } = await deliveredSale({
       address: 'San Martín 123',
-      taxCondition: 5,
+      taxId: '30712345671',
+      taxCondition: 1,
     });
 
     const res = await preview(orderId).expect(200);
@@ -182,14 +183,29 @@ describe('Facturación con revisión previa', () => {
         name: 'Carnicería Centro',
         email: 'centro@test.com',
         address: 'San Martín 123',
-        taxCondition: 5,
+        taxId: '30712345671',
+        taxCondition: 1,
       },
-      letter: 'B',
+      letter: 'A',
       total: 2000,
       problems: [],
       emailConfigured: true,
     });
     expect(res.body.vat).toBeCloseTo(190.05, 2);
+  });
+
+  it('factura siempre A: a un consumidor final avisa que no se puede emitir', async () => {
+    const { orderId } = await deliveredSale({ taxCondition: 5 });
+
+    const res = await preview(orderId).expect(200);
+
+    expect(res.body.letter).toBe('A');
+    expect(res.body.problems).toEqual(
+      expect.arrayContaining([
+        'Para Factura A el cliente necesita un CUIT válido',
+        'Para Factura A el cliente tiene que ser Responsable Inscripto o Monotributista',
+      ]),
+    );
   });
 
   it('avisa los datos que impiden emitir (CUIT inválido para Factura A)', async () => {
@@ -313,7 +329,11 @@ describe('Facturación con revisión previa', () => {
 
   it('no factura dos veces la misma venta', async () => {
     const { orderId } = await deliveredSale();
-    const customer = { name: 'Carnicería Centro', taxCondition: 5 };
+    const customer = {
+      name: 'Carnicería Centro',
+      taxId: '30712345671',
+      taxCondition: 1,
+    };
 
     expect((await emit({ orderId, customer }).expect(201)).body.ok).toBe(true);
     const again = await emit({ orderId, customer }).expect(201);
@@ -325,7 +345,11 @@ describe('Facturación con revisión previa', () => {
 
   it('si ARCA la rechaza queda rechazada y se puede reintentar', async () => {
     const { orderId } = await deliveredSale();
-    const customer = { name: 'Carnicería Centro', taxCondition: 5 };
+    const customer = {
+      name: 'Carnicería Centro',
+      taxId: '30712345671',
+      taxCondition: 1,
+    };
     arca.failNext = 'reject';
 
     const res = await emit({ orderId, customer }).expect(201);
@@ -342,7 +366,11 @@ describe('Facturación con revisión previa', () => {
 
   it('si se corta la conexión, al reintentar recupera la factura de ARCA sin duplicarla', async () => {
     const { orderId } = await deliveredSale();
-    const customer = { name: 'Carnicería Centro', taxCondition: 5 };
+    const customer = {
+      name: 'Carnicería Centro',
+      taxId: '30712345671',
+      taxCondition: 1,
+    };
     arca.failNext = 'network';
 
     const first = await emit({ orderId, customer }).expect(201);
@@ -370,7 +398,8 @@ describe('Facturación con revisión previa', () => {
       orderId,
       customer: {
         name: 'Carnicería Centro',
-        taxCondition: 5,
+        taxId: '30712345671',
+        taxCondition: 1,
         email: 'centro@test.com',
       },
     }).expect(201);

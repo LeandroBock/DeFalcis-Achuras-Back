@@ -1,4 +1,12 @@
-import { IsDateString, IsOptional, IsUUID, ValidateIf } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsOptional,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
 
 export class AssignOrderDto {
   // null para desasignar.
@@ -9,4 +17,13 @@ export class AssignOrderDto {
   @IsOptional()
   @IsDateString({ strict: true })
   deliveryDate?: string;
+}
+
+// Asignar varias notas pendientes al mismo repartidor (o desasignarlas).
+export class BulkAssignOrdersDto extends AssignOrderDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsUUID('all', { each: true })
+  orderIds: string[];
 }

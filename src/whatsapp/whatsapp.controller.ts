@@ -30,6 +30,7 @@ import type { WhatsAppClient } from './connection/whatsapp-client.js';
 import { SendWhatsAppMessageDto } from './dto/send-whatsapp-message.dto.js';
 import { WhatsAppEventsService } from './whatsapp-events.service.js';
 import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
+import { ReceiptSenderService } from './receipt-sender.service.js';
 
 // Cada cuánto se manda un evento vacío para que proxies como el de Render no
 // corten la conexión de eventos por inactividad.
@@ -44,8 +45,19 @@ export class WhatsAppController {
     private readonly whatsappService: WhatsAppService,
     private readonly inbox: WhatsAppInboxService,
     private readonly events: WhatsAppEventsService,
+    private readonly receiptSender: ReceiptSenderService,
     @Inject(WHATSAPP_CLIENT) private readonly client: WhatsAppClient,
   ) {}
+
+  // ---------- Recibos ----------
+
+  // Reenvía el recibo X de una entrega al WhatsApp del cliente (por
+  // ejemplo, si al entregar WhatsApp estaba desconectado).
+  @Post('receipts/:orderId')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
+  sendReceipt(@Param('orderId', ParseUUIDPipe) orderId: string) {
+    return this.receiptSender.send(orderId);
+  }
 
   // ---------- Conexión (vincular el celular con el QR) ----------
 

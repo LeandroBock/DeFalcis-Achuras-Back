@@ -1,8 +1,12 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
+  Param,
+  ParseUUIDPipe,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +24,9 @@ import {
   DeliveriesService,
   todayInBusinessTimezone,
 } from './deliveries.service.js';
+import { SetRouteDto } from './dto/set-route.dto.js';
+
+const OFFICE = [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS];
 
 @ApiBearerAuth()
 @Controller('deliveries')
@@ -45,6 +52,37 @@ export class DeliveriesController {
     }
 
     return this.deliveriesService.pendingFor(user.sub, date);
+  }
+
+  // Notas pendientes de un repartidor en el orden de su ruta, para que la
+  // oficina la arme (?date=AAAA-MM-DD opcional).
+  @Get('route')
+  @Roles(...OFFICE)
+  route(@Query('driverId') driverId?: string, @Query('date') date?: string) {
+    if (!driverId || !isUUID(driverId)) {
+      throw new BadRequestException('Elegí un repartidor');
+    }
+
+    if (date !== undefined && !isDateString(date, { strict: true })) {
+      throw new BadRequestException(
+        'La fecha debe tener el formato AAAA-MM-DD',
+      );
+    }
+
+    return this.deliveriesService.pendingFor(driverId, date);
+  }
+
+  @Put('route')
+  @Roles(...OFFICE)
+  setRoute(@Body() dto: SetRouteDto) {
+    return this.deliveriesService.setRoute(dto.driverId, dto.orderIds);
+  }
+
+  // Una nota con todo lo necesario para cargar su entrega.
+  @Get('orders/:id')
+  @Roles(...OFFICE)
+  detail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.deliveriesService.detail(id);
   }
 
   // Tablero del día (por defecto, hoy) para seguir el reparto en vivo.

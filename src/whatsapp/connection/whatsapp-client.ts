@@ -45,7 +45,19 @@ export interface WhatsAppClient {
     phone: string,
     text: string,
   ): Promise<{ externalMessageId: string; phone: string }>;
+  // Envía un archivo (por ejemplo, el PDF del recibo) con un texto opcional.
+  sendDocument(
+    phone: string,
+    document: WhatsAppDocument,
+  ): Promise<{ externalMessageId: string; phone: string }>;
 }
+
+export type WhatsAppDocument = {
+  buffer: Buffer;
+  fileName: string;
+  mimetype: string;
+  caption?: string;
+};
 
 export const notConnected = () =>
   new ServiceUnavailableException(
@@ -71,6 +83,10 @@ export class DisabledWhatsAppClient implements WhatsAppClient {
   }
 
   sendText(): Promise<never> {
+    return Promise.reject(notConnected());
+  }
+
+  sendDocument(): Promise<never> {
     return Promise.reject(notConnected());
   }
 }

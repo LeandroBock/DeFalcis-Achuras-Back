@@ -11,6 +11,7 @@ import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { DeliveriesController } from './deliveries.controller.js';
 import { DeliveriesService } from './deliveries.service.js';
+import { ReceiptService } from './receipt.service.js';
 import { Payment } from '../payments/entities/payments.entity.js';
 import { User } from '../users/entities/user.entity.js';
 
@@ -31,7 +32,7 @@ import { InventoryModule } from '../inventory/inventory.module.js';
     InventoryModule,
   ],
   controllers: [OrdersController, DeliveriesController],
-  providers: [OrdersService, DeliveriesService],
-  exports: [OrdersService],
+  providers: [OrdersService, DeliveriesService, ReceiptService],
+  exports: [OrdersService, ReceiptService],
 })
 export class OrdersModule {}

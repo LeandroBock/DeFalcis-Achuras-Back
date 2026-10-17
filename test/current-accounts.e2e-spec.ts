@@ -97,8 +97,8 @@ describe('Cuenta corriente', () => {
     expect((await account(customer.id)).body.debt).toBe(600);
   });
 
-  it('el repartidor ve la deuda anterior en la nota nueva', async () => {
-    const customer = await t.createCustomer();
+  it('el repartidor ve la deuda anterior si el cliente tiene el tilde', async () => {
+    const customer = await t.createCustomer({ collectDebt: true });
     await deliveredSale(customer.id, [{ amount: 250, method: 'cash' }]);
 
     const product = await t.createProduct();
@@ -122,6 +122,36 @@ describe('Cuenta corriente', () => {
       (n: { customer: { id: string } }) => n.customer.id === customer.id,
     );
     expect(note.customer.pendingBalance).toBe(750);
+  });
+
+  it('sin el tilde, la deuda no se le muestra al repartidor', async () => {
+    const customer = await t.createCustomer();
+    await deliveredSale(customer.id, [{ amount: 250, method: 'cash' }]);
+
+    const product = await t.createProduct();
+    await t
+      .http()
+      .post('/orders')
+      .set('authorization', office.auth)
+      .send({
+        customerId: customer.id,
+        items: [{ productId: product.id, quantity: 1 }],
+        assignedToId: driver.user.id,
+      })
+      .expect(201);
+
+    const pending = await t
+      .http()
+      .get('/deliveries/mine')
+      .set('authorization', driver.auth)
+      .expect(200);
+    const note = pending.body.find(
+      (n: { customer: { id: string } }) => n.customer.id === customer.id,
+    );
+    expect(note.customer.collectDebt).toBe(false);
+    expect(note.customer.pendingBalance).toBe(0);
+    // La cuenta corriente la sigue mostrando.
+    expect((await account(customer.id)).body.debt).toBe(750);
   });
 
   it('lo cobrado de más en la entrega paga la deuda más vieja primero', async () => {

@@ -5,6 +5,7 @@ import { Customer } from './entities/customer.entity.js';
 import { CustomerPrice } from './entities/customer-price.entity.js';
 import { Product } from '../products/entities/product.entity.js';
 import { Order } from '../orders/entities/order.entity.js';
+import { PriceList } from '../price-lists/entities/price-list.entity.js';
 import { CustomersController } from './customers.controller.js';
 import { CustomersService } from './customers.service.js';
 import { CurrentAccountsController } from './current-accounts.controller.js';
@@ -14,7 +15,13 @@ import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, CustomerPrice, Product, Order]),
+    TypeOrmModule.forFeature([
+      Customer,
+      CustomerPrice,
+      Product,
+      Order,
+      PriceList,
+    ]),
     AuthModule,
   ],
   controllers: [CustomersController, CurrentAccountsController],

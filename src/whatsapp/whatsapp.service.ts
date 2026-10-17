@@ -27,7 +27,7 @@ import {
   toPaginated,
 } from '../common/pagination.js';
 import { WhatsAppInboxService } from './whatsapp-inbox.service.js';
-import { specialPricesFor } from '../customers/customer-prices.js';
+import { pricingForCustomer } from '../customers/customer-prices.js';
 
 @Injectable()
 export class WhatsAppService {
@@ -54,6 +54,7 @@ export class WhatsAppService {
     message: string;
     customerId?: string;
     externalMessageId?: string;
+    type?: WhatsAppMessageType;
   }) {
     // Si no recibimos customerId, buscamos al cliente por teléfono
     const customerId =
@@ -77,6 +78,7 @@ export class WhatsAppService {
     message: string;
     customerId?: string;
     externalMessageId?: string;
+    type?: WhatsAppMessageType;
   }) {
     // Si no recibimos customerId, buscamos al cliente por teléfono
     const customerId =
@@ -88,7 +90,7 @@ export class WhatsAppService {
       customerId,
       externalMessageId: data.externalMessageId,
       direction: WhatsAppMessageDirection.OUTGOING,
-      type: WhatsAppMessageType.TEXT,
+      type: data.type ?? WhatsAppMessageType.TEXT,
       status: WhatsAppMessageStatus.SENT,
     });
 
@@ -190,14 +192,14 @@ export class WhatsAppService {
 
     const customer = await this.inbox.findCustomerByPhone(data.phone);
 
-    // Si el cliente tiene precio especial para ese producto, se usa ese.
-    const specialPrices = customer
-      ? await specialPricesFor(this.dataSource.manager, customer.id, [
-          analysis.productId,
-        ])
-      : new Map<string, number>();
-    const unitPrice =
-      specialPrices.get(analysis.productId) ?? analysis.salePrice;
+    // El precio del cliente: su lista y su descuento o precio especial.
+    const unitPrice = customer
+      ? (
+          await pricingForCustomer(this.dataSource.manager, customer.id, [
+            analysis.productId,
+          ])
+        ).priceOf({ id: analysis.productId, salePrice: analysis.salePrice })
+      : analysis.salePrice;
     const subtotal = Number((analysis.quantity * unitPrice).toFixed(2));
 
     const whatsappOrder = this.whatsappOrdersRepository.create({

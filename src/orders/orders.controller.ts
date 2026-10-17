@@ -8,13 +8,16 @@ import {
   Post,
   UseGuards,
   Query,
+  ForbiddenException,
+  StreamableFile,
 } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
 import { OrdersService } from './orders.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { UpdateOrderDto } from './dto/update-order.dto.js';
-import { AssignOrderDto } from './dto/assign-order.dto.js';
+import { AssignOrderDto, BulkAssignOrdersDto } from './dto/assign-order.dto.js';
+import { ReceiptService } from './receipt.service.js';
 import { DeliverOrderDto } from './dto/deliver-order.dto.js';
 import { NotDeliveredDto } from './dto/not-delivered.dto.js';
 import { OrdersQueryDto } from './dto/orders-query.dto.js';
@@ -33,13 +36,38 @@ const OFFICE = [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS];
 @Controller('orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly receipts: ReceiptService,
+  ) {}
 
   // Filtros opcionales: ?status=pending&assignedToId=...&deliveryDate=AAAA-MM-DD
   @Get()
   @Roles(...OFFICE, UserRole.FINANZAS)
   findAll(@Query() query: OrdersQueryDto) {
     return this.ordersService.findAll(query);
+  }
+
+  // Recibo X de una entrega (PDF). El repartidor solo ve los suyos.
+  @Get(':id/receipt')
+  @Roles(...OFFICE, UserRole.FINANZAS, UserRole.REPARTO)
+  async receipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (user.role === UserRole.REPARTO) {
+      const { order } = await this.ordersService.findOne(id);
+      if (order.deliveredById !== user.sub) {
+        throw new ForbiddenException('Este recibo no es de una entrega tuya');
+      }
+    }
+
+    const { buffer, filename } = await this.receipts.pdf(id);
+
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 
   @Get(':id')
@@ -60,6 +88,13 @@ export class OrdersController {
   @Roles(...OFFICE)
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateOrderDto) {
     return this.ordersService.update(id, dto);
+  }
+
+  // Asignar muchas notas de una vez al mismo repartidor.
+  @Post('assign')
+  @Roles(...OFFICE)
+  assignMany(@Body() dto: BulkAssignOrdersDto) {
+    return this.ordersService.assignMany(dto);
   }
 
   @Post(':id/assign')

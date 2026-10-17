@@ -35,11 +35,19 @@ import { UserRole } from '../users/entities/user.entity.js';
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
-  // Precios especiales del cliente (montos fijos por producto).
+  // Precios especiales del cliente: monto fijo o % de descuento sobre su
+  // lista, por producto.
   @Get(':id/prices')
   @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
   findPrices(@Param('id', ParseUUIDPipe) id: string) {
     return this.customersService.findPrices(id);
+  }
+
+  // Precio final de cada producto para el cliente (lista + descuentos).
+  @Get(':id/pricing')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENTAS)
+  findPricing(@Param('id', ParseUUIDPipe) id: string) {
+    return this.customersService.findPricing(id);
   }
 
   @Put(':id/prices/:productId')
@@ -49,7 +57,7 @@ export class CustomersController {
     @Param('productId', ParseUUIDPipe) productId: string,
     @Body() dto: SetCustomerPriceDto,
   ) {
-    return this.customersService.setPrice(id, productId, dto.price);
+    return this.customersService.setPrice(id, productId, dto);
   }
 
   @Delete(':id/prices/:productId')

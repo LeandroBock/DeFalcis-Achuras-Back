@@ -18,12 +18,9 @@ describe('cálculos de la factura', () => {
     expect(isValidCuit('2011111111')).toBe(false);
   });
 
-  it('elige el tipo según el emisor y la condición del cliente', () => {
-    expect(voucherTypeFor(false, 1)).toBe(FACTURA_A);
-    expect(voucherTypeFor(false, 6)).toBe(FACTURA_A);
-    expect(voucherTypeFor(false, 5)).toBe(FACTURA_B);
-    expect(voucherTypeFor(false, 4)).toBe(FACTURA_B);
-    expect(voucherTypeFor(true, 1)).toBe(FACTURA_C);
+  it('factura siempre A (C solo si el emisor fuera monotributista)', () => {
+    expect(voucherTypeFor(false)).toBe(FACTURA_A);
+    expect(voucherTypeFor(true)).toBe(FACTURA_C);
     expect(issuerIsMonotributo('Responsable Monotributo')).toBe(true);
     expect(issuerIsMonotributo('IVA Responsable Inscripto')).toBe(false);
   });

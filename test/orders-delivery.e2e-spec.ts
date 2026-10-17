@@ -517,6 +517,7 @@ describe('Notas de pedido, reparto y entrega', () => {
         notes: 'Entregar por la puerta de atrás',
         taxId: '30712345679',
         taxCondition: 1,
+        collectDebt: true,
       });
       const product = await t.createProduct({ salePrice: 1000, stock: 50 });
       const items = [{ productId: product.id, quantity: 3 }];
@@ -561,6 +562,7 @@ describe('Notas de pedido, reparto y entrega', () => {
         notes: 'Entregar por la puerta de atrás',
         taxId: '30712345679',
         taxCondition: 1,
+        collectDebt: true,
         pendingBalance: 4000,
         specialPrices: {},
       });

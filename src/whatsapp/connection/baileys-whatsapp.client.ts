@@ -5,6 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import makeWASocket, {
+  AnyMessageContent,
   Browsers,
   ConnectionState,
   DisconnectReason,
@@ -36,6 +37,7 @@ import {
 import {
   InboundWhatsAppMessage,
   WhatsAppClient,
+  WhatsAppDocument,
   WhatsAppConnectionState,
   WhatsAppConnectionStatus,
   notConnected,
@@ -149,6 +151,19 @@ export class BaileysWhatsAppClient
   }
 
   async sendText(phone: string, text: string) {
+    return this.send(phone, { text });
+  }
+
+  async sendDocument(phone: string, document: WhatsAppDocument) {
+    return this.send(phone, {
+      document: document.buffer,
+      fileName: document.fileName,
+      mimetype: document.mimetype,
+      caption: document.caption,
+    });
+  }
+
+  private async send(phone: string, content: AnyMessageContent) {
     const socket = this.socket;
 
     if (!socket || this.state.status !== WhatsAppConnectionStatus.CONNECTED) {
@@ -162,7 +177,7 @@ export class BaileysWhatsAppClient
       throw new BadRequestException(`El número ${number} no tiene WhatsApp`);
     }
 
-    const sent = await socket.sendMessage(contact.jid, { text });
+    const sent = await socket.sendMessage(contact.jid, content);
 
     if (!sent?.key.id) {
       throw new Error('WhatsApp no confirmó el envío del mensaje');
