@@ -5,6 +5,7 @@ import {
   WhatsAppConnectionStatus,
 } from '../src/whatsapp/connection/whatsapp-client.js';
 
+import { ReceiptSenderService } from '../src/whatsapp/receipt-sender.service.js';
 import { FakeWhatsAppClient } from './support/fake-whatsapp-client.js';
 import { TestApp, createTestApp } from './support/test-app.js';
 
@@ -216,6 +217,32 @@ describe('Listas de precios, rutas de reparto y recibo X', () => {
       expect(
         mine.body.map((n: { routeOrder: number }) => n.routeOrder),
       ).toEqual([1, 2, 3]);
+
+      // Una nota nueva asignada (aunque sea para hoy) va al final de la ruta.
+      const customer = await t.createCustomer({ name: 'Parada nueva' });
+      const late = await createNote(
+        customer.id,
+        [{ productId: product.id, quantity: 1 }],
+        { deliveryDate: new Date().toISOString().slice(0, 10) },
+      );
+      await t
+        .http()
+        .post(`/orders/${late.order.id}/assign`)
+        .set('authorization', ventas.auth)
+        .send({ assignedToId: routeDriver.user.id })
+        .expect(201);
+
+      const after = await t
+        .http()
+        .get('/deliveries/mine')
+        .set('authorization', routeDriver.auth)
+        .expect(200);
+      expect(after.body.map((note: { id: string }) => note.id)).toEqual([
+        c,
+        a,
+        b,
+        late.order.id,
+      ]);
     });
 
     it('no asigna si alguna nota ya fue entregada o anulada', async () => {
@@ -364,6 +391,74 @@ describe('Listas de precios, rutas de reparto y recibo X', () => {
         .set('authorization', ventas.auth)
         .expect(201);
       expect(resent.body).toEqual({ sent: true, to: '5493415550000' });
+    });
+
+    it('si el PDF no se puede mandar, le llega el resumen en texto', async () => {
+      const product = await t.createProduct({ salePrice: 1000, stock: 10 });
+      const customer = await t.createCustomer({ phone: '341 15 5550123' });
+      const note = await createNote(
+        customer.id,
+        [{ productId: product.id, quantity: 1 }],
+        { assignedToId: driver.user.id },
+      );
+
+      fake.failDocuments = true;
+      const texts = fake.sent.length;
+      await t
+        .http()
+        .post(`/orders/${note.order.id}/deliver`)
+        .set('authorization', driver.auth)
+        .send({ items: [{ productId: product.id, quantity: 1 }] })
+        .expect(201);
+
+      const order = await waitForReceipt(note.order.id);
+      fake.failDocuments = false;
+
+      expect(order.receiptSentAt).not.toBeNull();
+      expect(order.receiptError).toMatch(/resumen en texto/);
+      const text = fake.sent.at(-1)!;
+      expect(fake.sent.length).toBe(texts + 1);
+      // 341 15 5550123 (con 15 y sin 0) va al celular correcto.
+      expect(text.phone).toBe('5493415550123');
+      expect(text.text).toContain('Total $1.000');
+    });
+
+    it('si WhatsApp estaba desconectado, lo reintenta solo', async () => {
+      const sender = t.app.get(ReceiptSenderService);
+      sender.retryDelaysMs = [100];
+
+      const product = await t.createProduct({ salePrice: 1000, stock: 10 });
+      const customer = await t.createCustomer({ phone: '3415550456' });
+      const note = await createNote(
+        customer.id,
+        [{ productId: product.id, quantity: 1 }],
+        { assignedToId: driver.user.id },
+      );
+
+      fake.state = { status: WhatsAppConnectionStatus.DISCONNECTED };
+      await t
+        .http()
+        .post(`/orders/${note.order.id}/deliver`)
+        .set('authorization', driver.auth)
+        .send({ items: [{ productId: product.id, quantity: 1 }] })
+        .expect(201);
+      await waitForReceipt(note.order.id);
+      fake.state = {
+        status: WhatsAppConnectionStatus.CONNECTED,
+        phone: '5493410000000',
+      };
+
+      await vi.waitFor(
+        async () => {
+          const order = await t.dataSource
+            .getRepository(Order)
+            .findOneByOrFail({ id: note.order.id });
+          expect(order.receiptSentAt).not.toBeNull();
+          expect(order.receiptError).toBeNull();
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(fake.documents.at(-1)!.phone).toBe('5493415550456');
     });
 
     it('no hay recibo de una nota sin entregar', async () => {

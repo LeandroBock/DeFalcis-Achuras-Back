@@ -38,6 +38,7 @@ import { CustomerPrices1791948255000 } from './migrations/1791948255000-Customer
 import { UserSessions1791986794000 } from './migrations/1791986794000-UserSessions.js';
 import { InvoiceDetails1792000000000 } from './migrations/1792000000000-InvoiceDetails.js';
 import { PriceListsRoutesReceipts1792100000000 } from './migrations/1792100000000-PriceListsRoutesReceipts.js';
+import { RouteOrderBackfill1792200000000 } from './migrations/1792200000000-RouteOrderBackfill.js';
 import { mailConfig } from './config/mail.config.js';
 
 @Module({
@@ -81,6 +82,7 @@ import { mailConfig } from './config/mail.config.js';
           UserSessions1791986794000,
           InvoiceDetails1792000000000,
           PriceListsRoutesReceipts1792100000000,
+          RouteOrderBackfill1792200000000,
         ],
         migrationsRun: true,
         // Log de SQL solo en desarrollo.

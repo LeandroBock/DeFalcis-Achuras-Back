@@ -58,9 +58,16 @@ export class FakeWhatsAppClient implements WhatsAppClient {
     });
   }
 
+  // Simula que WhatsApp no acepta el archivo (por ejemplo, al subirlo).
+  failDocuments = false;
+
   sendDocument(phone: string, document: WhatsAppDocument) {
     if (this.state.status !== WhatsAppConnectionStatus.CONNECTED) {
       return Promise.reject(notConnected());
+    }
+
+    if (this.failDocuments) {
+      return Promise.reject(new Error('Media upload failed'));
     }
 
     const sent = {

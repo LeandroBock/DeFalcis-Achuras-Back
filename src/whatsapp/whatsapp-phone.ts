@@ -45,10 +45,13 @@ export function toWhatsAppNumber(phone: string) {
     return digits;
   }
 
-  // Número local (con 0/15 o de hasta 11 dígitos), o 54 sin el 9 de celular.
+  // Número local (con 0/15 o de hasta 11 dígitos), con 15 pero sin el 0
+  // (341 15 5556789), o 54 sin el 9 de celular.
   if (
     digits.startsWith('0') ||
     digits.length <= LOCAL_NUMBER_LENGTH + 1 ||
+    (digits.length === LOCAL_NUMBER_LENGTH + 2 &&
+      phoneMatchKey(phone) !== digits.slice(-LOCAL_NUMBER_LENGTH)) ||
     digits.startsWith('54')
   ) {
     return ARGENTINA_MOBILE_PREFIX + phoneMatchKey(phone);

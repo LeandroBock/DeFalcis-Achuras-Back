@@ -69,15 +69,15 @@ export class DeliveriesService {
 
   // Notas pendientes asignadas al repartidor, con lo necesario para ir al
   // domicilio: cliente (dirección, teléfono) y productos, en el orden de la
-  // ruta que armó la oficina. Con `date`, solo las de ese día y las que no
-  // tienen fecha.
+  // ruta que armó la oficina (cada nota asignada va al final). Con `date`,
+  // solo las de ese día y las que no tienen fecha.
   async pendingFor(userId: string, date?: string) {
     const query = this.ordersRepository
       .createQueryBuilder('o')
       .where('o.assignedToId = :userId', { userId })
       .andWhere('o.status = :status', { status: OrderStatus.PENDING })
-      .orderBy('o.deliveryDate', 'ASC', 'NULLS LAST')
-      .addOrderBy('o.routeOrder', 'ASC', 'NULLS LAST')
+      .orderBy('o.routeOrder', 'ASC', 'NULLS LAST')
+      .addOrderBy('o.deliveryDate', 'ASC', 'NULLS LAST')
       .addOrderBy('o.createdAt', 'ASC');
 
     if (date) {
